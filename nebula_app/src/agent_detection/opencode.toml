@@ -30,3 +30,14 @@ state = "working"
 priority = 200
 region = "bottom_non_empty_lines(8)"
 regex = ['(■|⬝){4,}']
+
+[[rules]]
+id = "prompt_idle"
+state = "idle"
+priority = 50
+region = "bottom_non_empty_lines(6)"
+line_regex = ['^\s*┃', '^\s*┃\s+(?:Build|Plan)\s+·\s']
+not = [
+  { contains = ["interrupt"] },
+  { contains = ["permission required"] },
+]

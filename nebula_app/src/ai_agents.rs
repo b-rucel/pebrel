@@ -1243,6 +1243,31 @@ mod tests {
     }
 
     #[test]
+    fn real_opencode_idle_chrome_reads_idle() {
+        // Empty prompt box on a fresh session and the box left behind after a
+        // finished turn: both are idle. The footer is "<mode> · <model>".
+        let fresh = "                    ┃\n\
+                     \x20                   ┃  Ask anything… \"Fix a TODO in the codebase\"\n\
+                     \x20                   ┃\n\
+                     \x20                   ┃  Build · GPT-6 Luna OpenAI · high\n\
+                     \x20                                   tab agents  ctrl+p commands\n\
+                     \x20 ● Tip Set \"mcp_*\": false to disable all tools from an MCP server\n\
+                     \x20 ~/projects/personal/promptgenius.net:develop  ⊙ 2 MCP /status      1.18.34";
+        let finished = "     ▣  Plan · GPT-6.1 Sol · 8.7s\n\
+                        \x20 ┃\n\
+                        \x20 ┃  Plan · GPT-6.1 Sol OpenAI\n\
+                        \x20 /home/bruce/.openclaw/workspace/kalshibot          350.6K (33%)";
+        for screen in [fresh, finished] {
+            let detection = detect("opencode", screen).unwrap();
+            assert_eq!(detection.status, AgentStatus::Idle, "rule={}", detection.rule_id);
+            assert_eq!(detection.rule_id, "prompt_idle");
+        }
+        let working = "  ┃\n  ┃  Build · GPT-6 Luna OpenAI\n  esc to interrupt";
+        let detection = detect("opencode", working).unwrap();
+        assert_eq!(detection.status, AgentStatus::Working, "rule={}", detection.rule_id);
+    }
+
+    #[test]
     fn real_antigravity_working_chrome_reads_working() {
         let screen = "  ⠋ Thinking... (8s)\n\
                       ────────────────────────────────────────\n\

@@ -21,6 +21,22 @@ fn negotiates_locale_and_falls_back_to_english() {
 }
 
 #[test]
+fn default_language_and_notification_fallbacks_are_english() {
+    assert_eq!(LanguagePreference::default(), LanguagePreference::EnUs);
+    assert_eq!(
+        UiLanguage::EnUs.text(Message::NotificationAiAttention),
+        "Needs your attention or input"
+    );
+    assert_eq!(UiLanguage::ZhCn.text(Message::NotificationAiAttention), "需要你的确认或输入");
+    for language in [UiLanguage::FrFr, UiLanguage::DeDe, UiLanguage::JaJp] {
+        assert_eq!(
+            language.text(Message::NotificationAiAttention),
+            "Needs your attention or input"
+        );
+    }
+}
+
+#[test]
 fn typed_and_compatibility_lookups_agree() {
     assert_eq!(UiLanguage::FrFr.text(Message::SettingsSidebarNetwork), "Réseau");
     assert_eq!(UiLanguage::JaJp.tr("settings.sidebar.network"), "ネットワーク");
@@ -48,6 +64,8 @@ fn tab_context_menu_has_translations_for_every_supported_language() {
         Message::CommonRename,
         Message::CommonClose,
         Message::TabMenuTabColor,
+        Message::CommonBackgroundImage,
+        Message::CommonClear,
     ];
     for language in UiLanguage::ALL {
         for item in items {
@@ -64,6 +82,63 @@ fn tab_context_menu_has_translations_for_every_supported_language() {
     }
     assert_eq!(UiLanguage::KoKr.text(Message::CommonCopyWorkingDirectory), "작업 디렉터리 복사");
     assert_eq!(UiLanguage::KoKr.text(Message::TabMenuTabColor), "탭 색상");
+}
+
+#[test]
+fn command_manager_text_uses_the_active_locale_instead_of_chinese_literals() {
+    let messages = [
+        Message::CommandsLoadFailed,
+        Message::CommandsTerminalUnavailable,
+        Message::CommandsSendFailed,
+        Message::CommandsCopied,
+        Message::CommandsMissing,
+        Message::CommandsNameHint,
+        Message::CommandsInputHint,
+        Message::CommandsEditTitle,
+        Message::CommandsNewTitle,
+        Message::CommandsName,
+        Message::CommandsCommand,
+        Message::CommandsRunAfterInsert,
+        Message::CommandsInsertDescription,
+        Message::CommandsSaved,
+        Message::CommandsSaveFailed,
+        Message::CommandsDeleteConfirmation,
+        Message::CommandsDeleteIrreversible,
+        Message::CommandsDeleteTitle,
+        Message::CommandsDeleteFailed,
+        Message::CommandsNoMatches,
+        Message::CommandsRun,
+        Message::CommandsInsert,
+        Message::CommandsRunTooltip,
+        Message::CommandsInsertTooltip,
+        Message::CommandsCopyTooltip,
+        Message::CommandsEditTooltip,
+        Message::CommandsDeleteTooltip,
+    ];
+
+    for message in messages {
+        assert!(!UiLanguage::ZhCn.text(message).is_empty(), "{message:?}");
+        for language in UiLanguage::ALL.iter().filter(|language| **language != UiLanguage::ZhCn) {
+            assert!(
+                !language
+                    .text(message)
+                    .chars()
+                    .any(|character| ('\u{4e00}'..='\u{9fff}').contains(&character)),
+                "{} displayed Chinese for {message:?}: {}",
+                language.code(),
+                language.text(message)
+            );
+        }
+    }
+
+    assert_eq!(
+        UiLanguage::EnUs.format(Message::CommandsDeleteConfirmation, &[("name", "deploy {name}")]),
+        "Delete command “deploy {name}”?"
+    );
+    assert_eq!(
+        UiLanguage::ZhCn.format(Message::CommandsDeleteConfirmation, &[("name", "deploy {name}")]),
+        "确定删除命令“deploy {name}”？"
+    );
 }
 
 #[test]

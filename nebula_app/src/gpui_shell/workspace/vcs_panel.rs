@@ -164,11 +164,11 @@ impl NebulaWorkspace {
                     .unwrap_or_default();
                 let summary = info.repository.clone().unwrap_or_default();
                 let layout = if summary.top_level.is_empty() {
-                    "空版本库 · 还没有内容".to_owned()
+                    language.pick("空版本库 · 还没有内容", "Empty repository · no content yet").to_owned()
                 } else if summary.has_standard_layout() {
-                    format!("标准布局 · {}", summary.top_level.join(" / "))
+                    format!("{} · {}", language.pick("标准布局", "Standard layout"), summary.top_level.join(" / "))
                 } else {
-                    format!("顶层 · {}", summary.top_level.join(" / "))
+                    format!("{} · {}", language.pick("顶层", "Top-level folders"), summary.top_level.join(" / "))
                 };
                 let last_commit = summary.last_author.as_ref().map(|author| {
                     let date = summary
@@ -206,7 +206,10 @@ impl NebulaWorkspace {
                     .child(
                         div()
                             .text_xs()
-                            .child("服务端版本库本身没有文件状态，检出成工作副本后才有。"),
+                            .child(language.pick(
+                                "服务端版本库本身没有文件状态，检出成工作副本后才有。",
+                                "A repository has no file status until it is checked out as a working copy.",
+                            )),
                     )
             });
 
@@ -302,7 +305,7 @@ impl NebulaWorkspace {
                         .items_center()
                         .child(
                             Button::new("svn-add-all")
-                                .label("添加")
+                                .label(language.pick("添加", "Add"))
                                 .small()
                                 .disabled(op_running || !svn_add_ready)
                                 .on_click(cx.listener(|this, _, _, cx| {
@@ -312,7 +315,7 @@ impl NebulaWorkspace {
                         )
                         .child(
                             Button::new("svn-update")
-                                .label("更新")
+                                .label(language.pick("更新", "Update"))
                                 .small()
                                 .disabled(op_running)
                                 .on_click(cx.listener(|this, _, _, cx| {
@@ -322,7 +325,7 @@ impl NebulaWorkspace {
                         )
                         .child(
                             Button::new("svn-log")
-                                .label("日志")
+                                .label(language.pick("日志", "Log"))
                                 .small()
                                 .disabled(op_running)
                                 .on_click(cx.listener(|this, _, _, cx| {
@@ -333,14 +336,14 @@ impl NebulaWorkspace {
                         .child(
                             // 面板自己的列表只看本地；"别人改了什么"要靠这个连远端比。
                             Button::new("svn-check-modifications")
-                                .label("检查修改")
+                                .label(language.pick("检查修改", "Check changes"))
                                 .small()
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.side_panel.svn_check_modifications();
                                     cx.notify();
                                 })),
                         )
-                        .child(Self::svn_more_menu(&menu_target))
+                        .child(Self::svn_more_menu(&menu_target, language))
                         .when(op_running, |row| row.child(Spinner::new().xsmall()))
                         .into_any_element(),
                 ),
@@ -348,31 +351,38 @@ impl NebulaWorkspace {
                     h_flex()
                         .gap_1()
                         .items_center()
-                        .child(Button::new("svn-browse-repository").label("浏览").small().on_click(
-                            cx.listener(|this, _, _, cx| {
-                                this.side_panel.svn_browse_repository();
-                                cx.notify();
-                            }),
-                        ))
                         .child(
-                            Button::new("svn-checkout-repository").label("检出").small().on_click(
-                                cx.listener(|this, _, _, cx| {
+                            Button::new("svn-browse-repository")
+                                .label(language.pick("浏览", "Browse"))
+                                .small()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.side_panel.svn_browse_repository();
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            Button::new("svn-checkout-repository")
+                                .label(language.pick("检出", "Check out"))
+                                .small()
+                                .on_click(cx.listener(|this, _, _, cx| {
                                     this.side_panel.svn_checkout_repository();
                                     cx.notify();
-                                }),
-                            ),
+                                })),
                         )
-                        .child(Button::new("svn-repository-log").label("日志").small().on_click(
-                            cx.listener(|this, _, _, cx| {
-                                this.side_panel.svn_repository_log();
-                                cx.notify();
-                            }),
-                        ))
+                        .child(
+                            Button::new("svn-repository-log")
+                                .label(language.pick("日志", "Log"))
+                                .small()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.side_panel.svn_repository_log();
+                                    cx.notify();
+                                })),
+                        )
                         .child(
                             // 三个目录齐了就没什么可建的，禁掉比让用户点出一个
                             // "目录已存在"的错误好。
                             Button::new("svn-standard-layout")
-                                .label("建标准布局")
+                                .label(language.pick("建标准布局", "Create standard layout"))
                                 .small()
                                 .disabled(op_running || standard_layout_done)
                                 .on_click(cx.listener(|this, _, _, cx| {
@@ -380,12 +390,15 @@ impl NebulaWorkspace {
                                     cx.notify();
                                 })),
                         )
-                        .child(Button::new("svn-repository-import").label("导入").small().on_click(
-                            cx.listener(|this, _, _, cx| {
-                                this.side_panel.svn_repository_import();
-                                cx.notify();
-                            }),
-                        ))
+                        .child(
+                            Button::new("svn-repository-import")
+                                .label(language.pick("导入", "Import"))
+                                .small()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.side_panel.svn_repository_import();
+                                    cx.notify();
+                                })),
+                        )
                         .when(op_running, |row| row.child(Spinner::new().xsmall()))
                         .into_any_element(),
                 ),
@@ -430,9 +443,10 @@ impl NebulaWorkspace {
             .when_some(history_head, |panel, head| panel.child(head))
             .when_some(repository_notice, |panel, notice| panel.child(notice))
             .when(tortoise_missing, |panel| {
-                panel.child(div().text_xs().text_color(theme.warning).child(
+                panel.child(div().text_xs().text_color(theme.warning).child(language.pick(
                     "未检测到 TortoiseSVN：日志、锁定、属性等对话框不可用（提交与更新仍可走 svn 命令行）",
-                ))
+                    "TortoiseSVN was not found. Log, lock, and properties dialogs are unavailable; commit and update still use the svn command line.",
+                )))
             })
             .when_some(op_error, |panel, error| {
                 panel.child(div().text_xs().text_color(theme.danger).child(error))
@@ -474,45 +488,68 @@ impl NebulaWorkspace {
     /// 按钮会把 320px 宽的抽屉挤爆，而它们的使用频率差着一个数量级——更新、
     /// 提交、日志是每天几十次，重定位和修订图是几个月一次。常驻位留给前者，
     /// 后者收进这里，位置固定、找得到就够。
-    fn svn_more_menu(target: &gpui::WeakEntity<Self>) -> impl IntoElement {
+    fn svn_more_menu(
+        target: &gpui::WeakEntity<Self>,
+        language: crate::i18n::UiLanguage,
+    ) -> impl IntoElement {
         let target = target.clone();
         Button::new("svn-more")
             .icon(IconName::Ellipsis)
             .small()
-            .tooltip("更多 SVN 操作")
+            .tooltip(language.pick("更多 SVN 操作", "More SVN actions"))
             .dropdown_menu_with_anchor(gpui::Anchor::TopRight, move |menu, _, _| {
                 menu.external_link_icon(false)
-                    .item(svn_menu_item("版本库浏览器", &target, |panel| {
-                        panel.svn_browse_working_copy();
-                    }))
-                    .item(svn_menu_item("更新至版本…", &target, |panel| {
-                        panel.svn_update_to_revision();
-                    }))
+                    .item(svn_menu_item(
+                        language.pick("版本库浏览器", "Repository browser"),
+                        &target,
+                        |panel| {
+                            panel.svn_browse_working_copy();
+                        },
+                    ))
+                    .item(svn_menu_item(
+                        language.pick("更新至版本…", "Update to revision…"),
+                        &target,
+                        |panel| {
+                            panel.svn_update_to_revision();
+                        },
+                    ))
                     .separator()
-                    .item(svn_menu_item("分支 / 标记…", &target, |panel| {
-                        panel.svn_branch_or_tag();
-                    }))
-                    .item(svn_menu_item("切换…", &target, |panel| {
+                    .item(svn_menu_item(
+                        language.pick("分支 / 标记…", "Branch / tag…"),
+                        &target,
+                        |panel| {
+                            panel.svn_branch_or_tag();
+                        },
+                    ))
+                    .item(svn_menu_item(language.pick("切换…", "Switch…"), &target, |panel| {
                         panel.svn_switch();
                     }))
-                    .item(svn_menu_item("合并…", &target, |panel| {
+                    .item(svn_menu_item(language.pick("合并…", "Merge…"), &target, |panel| {
                         panel.svn_merge();
                     }))
                     .separator()
-                    .item(svn_menu_item("导出…", &target, |panel| {
+                    .item(svn_menu_item(language.pick("导出…", "Export…"), &target, |panel| {
                         panel.svn_export();
                     }))
-                    .item(svn_menu_item("修订图", &target, |panel| {
-                        panel.svn_revision_graph();
-                    }))
-                    .item(svn_menu_item("重定位…", &target, |panel| {
-                        panel.svn_relocate();
-                    }))
+                    .item(svn_menu_item(
+                        language.pick("修订图", "Revision graph"),
+                        &target,
+                        |panel| {
+                            panel.svn_revision_graph();
+                        },
+                    ))
+                    .item(svn_menu_item(
+                        language.pick("重定位…", "Relocate…"),
+                        &target,
+                        |panel| {
+                            panel.svn_relocate();
+                        },
+                    ))
                     .separator()
-                    .item(svn_menu_item("属性", &target, |panel| {
+                    .item(svn_menu_item(language.pick("属性", "Properties"), &target, |panel| {
                         panel.svn_properties();
                     }))
-                    .item(svn_menu_item("清理", &target, |panel| {
+                    .item(svn_menu_item(language.pick("清理", "Clean up"), &target, |panel| {
                         panel.svn_cleanup();
                     }))
             })
@@ -527,6 +564,7 @@ impl NebulaWorkspace {
         path: &str,
         index: usize,
         section_id: &str,
+        language: crate::i18n::UiLanguage,
     ) -> impl IntoElement {
         let target = target.clone();
         let path = path.to_owned();
@@ -534,41 +572,44 @@ impl NebulaWorkspace {
             .icon(IconName::Ellipsis)
             .ghost()
             .xsmall()
-            .tooltip("此文件的 SVN 操作")
+            .tooltip(language.pick("此文件的 SVN 操作", "SVN actions for this file"))
             .dropdown_menu_with_anchor(gpui::Anchor::TopRight, move |menu, _, _| {
                 let item = |label: &'static str,
                             action: fn(&mut crate::display::side_panel::SidePanel, &str)| {
                     svn_row_menu_item(label, &target, &path, action)
                 };
                 menu.external_link_icon(false)
-                    .item(item("显示日志", |panel, path| {
+                    .item(item(language.pick("显示日志", "Show log"), |panel, path| {
                         panel.svn_log_path(path);
                     }))
-                    .item(item("责任追溯", |panel, path| {
+                    .item(item(language.pick("责任追溯", "Blame"), |panel, path| {
                         panel.svn_blame_path(path);
                     }))
                     .separator()
-                    .item(item("获得锁定…", |panel, path| {
+                    .item(item(language.pick("获得锁定…", "Get lock…"), |panel, path| {
                         panel.svn_lock_path(path);
                     }))
-                    .item(item("释放锁定", |panel, path| {
+                    .item(item(language.pick("释放锁定", "Release lock"), |panel, path| {
                         panel.svn_unlock_path(path);
                     }))
                     .separator()
-                    .item(item("加入忽略列表…", |panel, path| {
-                        panel.svn_ignore_path(path);
-                    }))
-                    .item(item("重命名…", |panel, path| {
+                    .item(item(
+                        language.pick("加入忽略列表…", "Add to ignore list…"),
+                        |panel, path| {
+                            panel.svn_ignore_path(path);
+                        },
+                    ))
+                    .item(item(language.pick("重命名…", "Rename…"), |panel, path| {
                         panel.svn_rename_path(path);
                     }))
-                    .item(item("删除", |panel, path| {
+                    .item(item(language.pick("删除", "Delete"), |panel, path| {
                         panel.svn_delete_path(path);
                     }))
                     .separator()
-                    .item(item("编辑冲突", |panel, path| {
+                    .item(item(language.pick("编辑冲突", "Resolve conflict"), |panel, path| {
                         panel.svn_conflict_editor_path(path);
                     }))
-                    .item(item("属性", |panel, path| {
+                    .item(item(language.pick("属性", "Properties"), |panel, path| {
                         panel.svn_properties_path(path);
                     }))
             })

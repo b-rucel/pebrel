@@ -106,6 +106,7 @@ impl AnswerReader {
     }
 
     fn prepared(&mut self, document: ReaderDocument, cx: &mut Context<Self>) {
+        let language = crate::gpui_shell::config::ui_language(cx);
         let starts =
             document.images.iter().map(|image| image.placeholder_start).collect::<Vec<_>>();
         self.images = document
@@ -120,10 +121,14 @@ impl AnswerReader {
             })
             .collect();
         if document.images_omitted > 0 {
-            self.notice = Some(format!(
-                "另有 {} 张图片超过本次阅读上限，原文未删减。",
-                document.images_omitted
-            ));
+            self.notice = Some(if matches!(language, crate::i18n::UiLanguage::ZhCn) {
+                format!("另有 {} 张图片超过本次阅读上限，原文未删减。", document.images_omitted)
+            } else {
+                format!(
+                    "{} more image(s) exceeded the viewing limit; the original response is unchanged.",
+                    document.images_omitted
+                )
+            });
         }
         let weak = cx.entity().downgrade();
         self.extensions = MarkdownExtensions::default()
@@ -136,7 +141,11 @@ impl AnswerReader {
                 }
                 let index = image_placeholder_index(node, context.offset(), &starts)?;
                 let source = context.node_source(node)?.to_owned();
-                Some(MarkdownNode::new(IMAGE_LANGUAGE, index).text("[图片]").markdown(source))
+                Some(
+                    MarkdownNode::new(IMAGE_LANGUAGE, index)
+                        .text(language.pick("[图片]", "[Image]"))
+                        .markdown(source),
+                )
             })
             .block_renderer(IMAGE_LANGUAGE, move |node, _, cx| match node.data::<usize>() {
                 Some(index) => render_image(&weak, *index, cx),
@@ -161,6 +170,7 @@ impl AnswerReader {
         let selected_path = image.selected_path.clone();
         let target = image.spec.target.clone();
         let base = self.snapshot.cwd.clone();
+        let language = crate::gpui_shell::config::ui_language(cx);
         self.decoding = true;
         cx.spawn(async move |reader, cx| {
             let result = cx
@@ -169,7 +179,12 @@ impl AnswerReader {
                         Some(path) => path,
                         None => document::local_image_path(
                             &target,
-                            base.as_deref().ok_or("回答未携带本地目录，请主动选择图片文件。")?,
+                            base.as_deref().ok_or_else(|| {
+                                language.pick(
+                                    "回答未携带本地目录，请主动选择图片文件。",
+                                    "The response has no local directory. Choose the image file manually.",
+                                ).to_owned()
+                            })?,
                         )?,
                     };
                     let bytes = document::read_image(&path)?;
@@ -189,7 +204,10 @@ impl AnswerReader {
                         },
                         Ok(_) => {
                             reader.images[index].status = ImageStatus::Failed(
-                                "图片超过本次阅读的 64 MiB 总预算，未显示。".into(),
+                                language.pick(
+                                    "图片超过本次阅读的 64 MiB 总预算，未显示。",
+                                    "The image exceeds the 64 MiB viewing budget and was not displayed.",
+                                ).to_owned(),
                             )
                         },
                         Err(error) => reader.images[index].status = ImageStatus::Failed(error),
@@ -203,11 +221,12 @@ impl AnswerReader {
     }
 
     fn choose_image(&mut self, index: usize, cx: &mut Context<Self>) {
+        let language = crate::gpui_shell::config::ui_language(cx);
         let picked = cx.prompt_for_paths(gpui::PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("选择 PNG / JPEG 图片".into()),
+            prompt: Some(language.pick("选择 PNG / JPEG 图片", "Choose a PNG / JPEG image").into()),
         });
         cx.spawn(async move |reader, cx| {
             let Ok(Ok(Some(paths))) = picked.await else { return };
@@ -282,6 +301,7 @@ fn image_placeholder_index(
 }
 
 fn render_image(reader: &WeakEntity<AnswerReader>, index: usize, cx: &mut App) -> AnyElement {
+    let language = crate::gpui_shell::config::ui_language(cx);
     let Some(entity) = reader.upgrade() else { return div().into_any_element() };
     let state = entity.read(cx);
     let Some(image) = state.images.get(index) else { return div().into_any_element() };
@@ -308,20 +328,14 @@ fn render_image(reader: &WeakEntity<AnswerReader>, index: usize, cx: &mut App) -
                             });
                         }),
                 )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("点击放大 · Esc 返回"),
-                );
+                .child(div().text_xs().text_color(cx.theme().muted_foreground).child(
+                    language.pick("点击放大 · Esc 返回", "Click to enlarge · Esc to return"),
+                ));
         },
         ImageStatus::Waiting | ImageStatus::Loading => {
-            block = block.child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("正在检查并加载本地图片…"),
-            );
+            block = block.child(div().text_sm().text_color(cx.theme().muted_foreground).child(
+                language.pick("正在检查并加载本地图片…", "Checking and loading local image…"),
+            ));
         },
         ImageStatus::Failed(error) => {
             let weak = reader.clone();
@@ -329,7 +343,7 @@ fn render_image(reader: &WeakEntity<AnswerReader>, index: usize, cx: &mut App) -
                 .child(div().text_sm().text_color(cx.theme().muted_foreground).child(error.clone()))
                 .child(
                     Button::new(("answer-pick-image", index))
-                        .label("选择本地图片")
+                        .label(language.pick("选择本地图片", "Choose a local image"))
                         .ghost()
                         .small()
                         .on_click(move |_, _, cx| {
@@ -346,6 +360,7 @@ fn render_image(reader: &WeakEntity<AnswerReader>, index: usize, cx: &mut App) -
 
 impl Render for AnswerReader {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let language = crate::gpui_shell::config::ui_language(cx);
         if let Some(markdown) = self.pending_markdown.take() {
             cx.on_next_frame(window, move |reader, _, cx| {
                 reader.text.update(cx, |text, cx| text.push_str(&markdown, cx));
@@ -384,15 +399,22 @@ impl Render for AnswerReader {
                     .items_center()
                     .child(
                         Button::new("reader-return")
-                            .label("终端")
+                            .label(language.pick("终端", "Terminal"))
                             .ghost()
                             .small()
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(ReaderEvent::Close))),
                     )
-                    .child(div().text_sm().flex_1().child(format!("{provider} · 最近完整回答")))
+                    .child(div().text_sm().flex_1().child(format!(
+                        "{provider} · {}",
+                        language.pick("最近完整回答", "Latest complete response")
+                    )))
                     .child(
                         Button::new("reader-source")
-                            .label(if self.raw_mode { "阅读" } else { "原文" })
+                            .label(if self.raw_mode {
+                                language.pick("阅读", "Reader")
+                            } else {
+                                language.pick("原文", "Raw")
+                            })
                             .ghost()
                             .small()
                             .disabled(!has_source)
@@ -403,7 +425,7 @@ impl Render for AnswerReader {
                     )
                     .child(
                         Button::new("reader-copy")
-                            .label("复制原文")
+                            .label(language.pick("复制原文", "Copy source"))
                             .ghost()
                             .small()
                             .disabled(!has_source)
@@ -423,7 +445,10 @@ impl Render for AnswerReader {
                         .py_1()
                         .text_sm()
                         .text_color(cx.theme().warning)
-                        .child("终端需要你处理输入或审批；点击「终端」返回。"),
+                        .child(language.pick(
+                            "终端需要你处理输入或审批；点击「终端」返回。",
+                            "The terminal needs your input or approval. Click Terminal to return.",
+                        )),
                 )
             })
             .when(self.newer_answer, |root| {
@@ -433,14 +458,19 @@ impl Render for AnswerReader {
                         .py_1()
                         .text_sm()
                         .text_color(muted)
-                        .child("已收到新回答；本页不跳动，返回终端再点「阅读」查看。"),
+                        .child(language.pick(
+                            "已收到新回答；本页不跳动，返回终端再点「阅读」查看。",
+                            "A new response arrived. This page stays in place; return to Terminal and open Reader to view it.",
+                        )),
                 )
             })
             .when_some(self.notice.clone(), |root, notice| {
                 root.child(div().px_3().py_2().text_sm().text_color(muted).child(notice))
             })
             .when(self.preparing, |root| {
-                root.child(div().p_3().text_sm().text_color(muted).child("正在整理完整回答…"))
+                root.child(div().p_3().text_sm().text_color(muted).child(
+                    language.pick("正在整理完整回答…", "Preparing complete response…"),
+                ))
             });
         let cwd = self.snapshot.cwd.clone();
         let markdown = div().flex_1().min_h_0().min_w_0().px_3().py_2().child(
@@ -505,16 +535,19 @@ impl Render for AnswerReader {
                     .p_3()
                     .gap_2()
                     .child(
-                        h_flex().justify_between().child("图片预览").child(
-                            Button::new("reader-close-preview")
-                                .label("返回阅读 · Esc")
-                                .ghost()
-                                .small()
-                                .on_click(cx.listener(|reader, _, _, cx| {
-                                    reader.preview = None;
-                                    cx.notify();
-                                })),
-                        ),
+                        h_flex()
+                            .justify_between()
+                            .child(language.pick("图片预览", "Image preview"))
+                            .child(
+                                Button::new("reader-close-preview")
+                                    .label(language.pick("返回阅读 · Esc", "Back to reader · Esc"))
+                                    .ghost()
+                                    .small()
+                                    .on_click(cx.listener(|reader, _, _, cx| {
+                                        reader.preview = None;
+                                        cx.notify();
+                                    })),
+                            ),
                     )
                     .child(
                         div()

@@ -19,9 +19,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(windows)]
 use std::sync::OnceLock;
 
+use gpui::AppContext as _;
 use gpui::{
-    App, Bounds, ContentMask, Corners, Hsla, IntoElement, ParentElement, Pixels, RenderImage,
-    Styled, Window, WindowBackgroundAppearance, div, fill, point, px, size,
+    App, Bounds, ContentMask, Context, Corners, Hsla, IntoElement, ParentElement, Pixels,
+    RenderImage, Styled, Window, WindowBackgroundAppearance, div, fill, point, px, size,
 };
 use image::{Frame, RgbaImage};
 
@@ -33,12 +34,21 @@ use nebula_settings::BlurModeName;
 
 use crate::renderer::image::{BackgroundImageAlignment, BackgroundImageFit, wallpaper_rect};
 
+const MAX_TAB_WALLPAPER_CACHE: usize = 8;
+
 /// App-owned wallpaper loading uses the existing GPUI executor: one job and one
 /// latest request, with generation checks before expensive work and publication.
 pub struct VisualEffects {
     pub opacity: f32,
     pub blur: BlurModeName,
     wallpaper: Option<Wallpaper>,
+    tab_wallpapers: std::collections::HashMap<PathBuf, TabWallpaper>,
+    tab_loading: HashSet<PathBuf>,
+    tab_generation: Arc<AtomicU64>,
+    tab_opacity: f32,
+    tab_fit: BackgroundImageFit,
+    tab_alignment: BackgroundImageAlignment,
+    cover_chrome: bool,
     generation: Arc<AtomicU64>,
     loading: bool,
 }
@@ -48,6 +58,7 @@ impl gpui::Global for VisualEffects {}
 impl Drop for VisualEffects {
     fn drop(&mut self) {
         self.generation.fetch_add(1, Ordering::Release);
+        self.tab_generation.fetch_add(1, Ordering::Release);
     }
 }
 
@@ -59,8 +70,13 @@ struct Wallpaper {
     height: u32,
     fit: BackgroundImageFit,
     alignment: BackgroundImageAlignment,
-    cover_chrome: bool,
     opacity: f32,
+}
+
+struct TabWallpaper {
+    image: Arc<RenderImage>,
+    width: u32,
+    height: u32,
 }
 
 /// Refresh prepared visual state without reading or decoding image files on the UI thread.
@@ -75,6 +91,76 @@ pub fn refresh(cx: &mut App) {
     refresh_surface_opacity(cx);
 }
 
+/// Prepare a per-tab image off the UI thread. Cached render images are shared by
+/// path and bounded so opening many tabs cannot retain an unbounded set of textures.
+pub fn ensure_tab_wallpaper(
+    path: PathBuf,
+    cx: &mut Context<crate::gpui_shell::workspace::NebulaWorkspace>,
+) {
+    let Some(effects) = cx.try_global::<VisualEffects>() else { return };
+    if effects.tab_wallpapers.contains_key(&path)
+        || effects.loading
+        || !effects.tab_loading.is_empty()
+    {
+        return;
+    }
+    let generation = effects.tab_generation.clone();
+    let version = generation.load(Ordering::Acquire);
+    let request = image_loader::Request { path: path.clone(), cached: None, generation, version };
+    cx.global_mut::<VisualEffects>().tab_loading.insert(path.clone());
+    let task = cx.background_executor().spawn(async move { image_loader::load(request) });
+    cx.spawn(async move |_, cx| {
+        let result = task.await;
+        cx.update(|cx| {
+            let Some(effects) = cx.try_global::<VisualEffects>() else { return };
+            cx.global_mut::<VisualEffects>().tab_loading.remove(&path);
+            match result {
+                Ok(Some(loaded)) => {
+                    let image = Arc::new(RenderImage::new([Frame::new(loaded.pixels)]));
+                    let effects = cx.global_mut::<VisualEffects>();
+                    effects.tab_wallpapers.insert(
+                        path.clone(),
+                        TabWallpaper {
+                            image,
+                            width: loaded.layout_width,
+                            height: loaded.layout_height,
+                        },
+                    );
+                    let retired = if effects.tab_wallpapers.len() > MAX_TAB_WALLPAPER_CACHE {
+                        effects
+                            .tab_wallpapers
+                            .keys()
+                            .find(|cached| **cached != path)
+                            .cloned()
+                            .and_then(|oldest| {
+                                effects.tab_wallpapers.remove(&oldest).map(|item| item.image)
+                            })
+                    } else {
+                        None
+                    };
+                    if let Some(image) = retired {
+                        cx.defer(move |cx| {
+                            cx.drop_image(image, None);
+                            cx.refresh_windows();
+                        });
+                    }
+                    cx.refresh_windows();
+                },
+                Ok(None) => {},
+                Err(error) => {
+                    log::warn!(
+                        "tab background image load failed for {}: {error:?}",
+                        path.display()
+                    );
+                    show_load_error(error, cx);
+                },
+            }
+            start_load(cx);
+        });
+    })
+    .detach();
+}
+
 fn update_wallpaper(
     rt: &nebula_settings::RuntimeSettings,
     opacity: f32,
@@ -86,6 +172,21 @@ fn update_wallpaper(
             opacity,
             blur,
             wallpaper: None,
+            tab_wallpapers: std::collections::HashMap::new(),
+            tab_loading: HashSet::new(),
+            tab_generation: Arc::new(AtomicU64::new(0)),
+            tab_opacity: rt.background_image_opacity.clamp(0.0, 1.0),
+            tab_fit: rt
+                .background_image_fit
+                .as_deref()
+                .and_then(BackgroundImageFit::parse)
+                .unwrap_or_default(),
+            tab_alignment: rt
+                .background_image_alignment
+                .as_deref()
+                .and_then(BackgroundImageAlignment::parse)
+                .unwrap_or_default(),
+            cover_chrome: rt.background_image_cover_chrome,
             generation: Arc::new(AtomicU64::new(0)),
             loading: false,
         });
@@ -94,6 +195,15 @@ fn update_wallpaper(
     let effects = cx.global_mut::<VisualEffects>();
     effects.opacity = opacity;
     effects.blur = blur;
+    effects.tab_opacity = rt.background_image_opacity.clamp(0.0, 1.0);
+    effects.tab_fit =
+        rt.background_image_fit.as_deref().and_then(BackgroundImageFit::parse).unwrap_or_default();
+    effects.tab_alignment = rt
+        .background_image_alignment
+        .as_deref()
+        .and_then(BackgroundImageAlignment::parse)
+        .unwrap_or_default();
+    effects.cover_chrome = rt.background_image_cover_chrome;
     let retired = if effects.wallpaper.as_ref().map(|wp| &wp.path) != desired.as_ref() {
         let retired = effects.wallpaper.take().and_then(|wp| wp.image);
         effects.wallpaper = desired.map(|path| Wallpaper {
@@ -104,7 +214,6 @@ fn update_wallpaper(
             height: 1,
             fit: BackgroundImageFit::default(),
             alignment: BackgroundImageAlignment::default(),
-            cover_chrome: false,
             opacity: 1.0,
         });
         retired
@@ -122,7 +231,6 @@ fn update_wallpaper(
             .as_deref()
             .and_then(BackgroundImageAlignment::parse)
             .unwrap_or_default();
-        wp.cover_chrome = rt.background_image_cover_chrome;
         wp.opacity = rt.background_image_opacity.clamp(0.0, 1.0);
     }
     effects.generation.fetch_add(1, Ordering::Release);
@@ -132,7 +240,7 @@ fn update_wallpaper(
 
 fn start_load(cx: &mut App) {
     let effects = cx.global_mut::<VisualEffects>();
-    if effects.loading {
+    if effects.loading || !effects.tab_loading.is_empty() {
         return;
     }
     let Some(wp) = effects.wallpaper.as_ref() else { return };
@@ -244,7 +352,10 @@ pub fn chrome_surface_opacity(cx: &App) -> f32 {
     let Some(effects) = cx.try_global::<VisualEffects>() else {
         return 1.0;
     };
-    if effects.wallpaper.as_ref().is_some_and(|wp| wp.cover_chrome && wp.image.is_some()) {
+    if effects.cover_chrome
+        && (effects.wallpaper.as_ref().is_some_and(|wp| wp.image.is_some())
+            || !effects.tab_wallpapers.is_empty())
+    {
         return effects.opacity.clamp(0.0, 1.0).min(0.78);
     }
     effects.opacity.clamp(0.0, 1.0)
@@ -761,24 +872,33 @@ pub fn paint_glass_overlay(bounds: Bounds<Pixels>, window: &mut Window, cx: &App
 /// below the shell/card surfaces, preserving the original visible scrim.
 /// Both modes reuse one image; opacity and layout never rebake its pixels.
 pub fn card_layer(cx: &App) -> impl IntoElement {
-    layer(false, cx)
+    layer(false, None, cx)
 }
 
-pub fn window_layer(cx: &App) -> impl IntoElement {
-    layer(true, cx)
+pub fn tab_card_layer(path: Option<PathBuf>, cx: &App) -> impl IntoElement {
+    layer(false, path, cx)
 }
 
-fn layer(under_chrome: bool, cx: &App) -> impl IntoElement {
-    let opacity = cx
-        .try_global::<VisualEffects>()
-        .and_then(|effects| effects.wallpaper.as_ref())
-        .map_or(1.0, |wp| wp.opacity);
+pub fn window_layer(tab_path: Option<PathBuf>, cx: &App) -> impl IntoElement {
+    layer(true, tab_path, cx)
+}
+
+fn layer(under_chrome: bool, tab_path: Option<PathBuf>, cx: &App) -> impl IntoElement {
+    let opacity = cx.try_global::<VisualEffects>().map_or(1.0, |effects| {
+        if tab_path.is_some() {
+            effects.tab_opacity
+        } else {
+            effects.wallpaper.as_ref().map_or(1.0, |wp| wp.opacity)
+        }
+    });
     // Canvas's style.paint does not apply element opacity in pinned GPUI;
     // Div owns that scope for its child, without baking alpha into the image.
     div().absolute().inset_0().opacity(opacity).child(
         gpui::canvas(
             |_, _, _| (),
-            move |bounds, _, window, cx| paint_wallpaper(bounds, under_chrome, window, cx),
+            move |bounds, _, window, cx| {
+                paint_wallpaper(bounds, under_chrome, tab_path.as_deref(), window, cx)
+            },
         )
         .size_full(),
     )
@@ -799,23 +919,62 @@ fn image_bounds(wp: &Wallpaper, anchor: Bounds<Pixels>, scale: f32) -> Bounds<Pi
     )
 }
 
-fn paint_wallpaper(bounds: Bounds<Pixels>, under_chrome: bool, window: &mut Window, cx: &App) {
+fn paint_wallpaper(
+    bounds: Bounds<Pixels>,
+    under_chrome: bool,
+    tab_path: Option<&std::path::Path>,
+    window: &mut Window,
+    cx: &App,
+) {
     let Some(effects) = cx.try_global::<VisualEffects>() else { return };
-    let Some(wp) = effects.wallpaper.as_ref() else { return };
+    let tab_wallpaper = tab_path.and_then(|path| effects.tab_wallpapers.get(path));
+    let global_wallpaper = effects.wallpaper.as_ref();
+    if tab_wallpaper.is_none() && global_wallpaper.is_none() {
+        return;
+    }
     // In the previous CPU crop path an offset card produced an empty overlay
     // (negative crop offsets cast to u32). Repainting the source here would
     // remove the visible scrim. Preserve that appearance directly, without
     // retaining the broken crop arithmetic or an empty card-sized bitmap.
-    if wp.opacity <= 0.0 || under_chrome != wp.cover_chrome {
+    let cover_chrome = effects.cover_chrome;
+    let opacity = if tab_wallpaper.is_some() {
+        effects.tab_opacity
+    } else {
+        global_wallpaper.map_or(1.0, |wp| wp.opacity)
+    };
+    if opacity <= 0.0 || under_chrome != cover_chrome {
         return;
     }
-    let Some(image) = wp.image.as_ref() else { return };
-    let anchor = if wp.cover_chrome {
+    let (image, width, height) = if let Some(tab) = tab_wallpaper {
+        (&tab.image, tab.width, tab.height)
+    } else {
+        let Some(wp) = global_wallpaper else { return };
+        let Some(image) = wp.image.as_ref() else { return };
+        (image, wp.width, wp.height)
+    };
+    let anchor = if cover_chrome {
         Bounds::new(point(px(0.0), px(0.0)), window.viewport_size())
     } else {
         bounds
     };
-    let image_bounds = image_bounds(wp, anchor, window.scale_factor().max(0.5));
+    let scale = window.scale_factor().max(0.5);
+    let image_bounds = if tab_wallpaper.is_some() {
+        let (x, y, width, height) = wallpaper_rect(
+            f32::from(anchor.size.width) * scale,
+            f32::from(anchor.size.height) * scale,
+            width as f32,
+            height as f32,
+            effects.tab_fit,
+            effects.tab_alignment,
+        );
+        Bounds::new(
+            anchor.origin + point(px(x / scale), px(y / scale)),
+            size(px(width / scale), px(height / scale)),
+        )
+    } else {
+        let Some(wp) = global_wallpaper else { return };
+        image_bounds(wp, anchor, scale)
+    };
     let radius = if under_chrome { px(0.0) } else { crate::gpui_shell::theme::card_radius(cx) };
     let corners = image_corners(bounds, image_bounds, radius);
     if let Err(error) = window.paint_image(bounds, image_bounds, corners, image.clone(), 0, false) {
@@ -845,6 +1004,13 @@ pub(crate) fn test_install_visual_effects(cx: &mut App, opacity: f32, blur: Blur
         opacity,
         blur,
         wallpaper: None,
+        tab_wallpapers: std::collections::HashMap::new(),
+        tab_loading: HashSet::new(),
+        tab_generation: Arc::new(AtomicU64::new(0)),
+        tab_opacity: 1.0,
+        tab_fit: BackgroundImageFit::default(),
+        tab_alignment: BackgroundImageAlignment::default(),
+        cover_chrome: false,
         generation: Arc::new(AtomicU64::new(0)),
         loading: false,
     });

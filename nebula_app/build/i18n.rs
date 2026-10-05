@@ -53,8 +53,11 @@ pub fn generate(directory: &Path, output: &Path) -> Result<(), String> {
     for info in LanguagePref::LANGUAGES {
         writeln!(code, "{},", info.rust_variant).unwrap();
     }
-    code.push_str("}\n#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\npub enum LanguagePreference {\n#[default]\nSystem,\n");
+    code.push_str("}\n#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\npub enum LanguagePreference {\nSystem,\n");
     for info in LanguagePref::LANGUAGES {
+        if info.rust_variant == "EnUs" {
+            code.push_str("#[default]\n");
+        }
         writeln!(code, "{},", info.rust_variant).unwrap();
     }
     code.push_str("}\nimpl LanguagePreference {\npub const ALL: &'static [Self] = &[Self::System,");

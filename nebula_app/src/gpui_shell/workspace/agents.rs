@@ -373,6 +373,7 @@ impl NebulaWorkspace {
                 runtime_id: Default::default(),
                 custom_name: agent.map(|agent| format!("{} 分叉", agent.display_name())),
                 color,
+                background_image: None,
                 shell_tag,
                 launch: Some(launch_session),
                 has_bell: false,

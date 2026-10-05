@@ -21,6 +21,11 @@ use crate::gpui_shell::prelude::*;
 /// 增长；8MB 已覆盖常见源码文件，超限的普通文件截断，冲突文件则拒绝写回。
 const MAX_CODE_BYTES: usize = 8 * 1024 * 1024;
 
+fn current_ui_language() -> crate::i18n::UiLanguage {
+    crate::i18n::LanguagePreference::from(nebula_settings::RuntimeSettings::load().language)
+        .resolved()
+}
+
 /// 扩展名 -> tree-sitter 语言 id（组件库 highlighter 的注册名）。
 fn language_for_extension(extension: &str) -> Option<&'static str> {
     Some(match extension.to_ascii_lowercase().as_str() {
@@ -192,10 +197,13 @@ impl CodeTabView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let ui_language = crate::gpui_shell::config::ui_language(cx);
         let title = Path::new(&relative_path)
             .file_name()
-            .map(|name| format!("合并 · {}", name.to_string_lossy()))
-            .unwrap_or_else(|| format!("合并 · {relative_path}"));
+            .map(|name| {
+                format!("{} · {}", ui_language.pick("合并", "Merge"), name.to_string_lossy())
+            })
+            .unwrap_or_else(|| format!("{} · {relative_path}", ui_language.pick("合并", "Merge")));
         let language = language_for_path(&relative_path);
         let input = code_input(language, window, cx);
         let ours = code_input(language, window, cx);
@@ -320,7 +328,14 @@ impl CodeTabView {
         }
         let result = self.input.read(cx).value().to_string();
         if contains_conflict_markers(&result) {
-            self.notice = Some("合并结果中仍有冲突标记，请处理后再应用".to_owned());
+            self.notice = Some(
+                crate::gpui_shell::config::ui_language(cx)
+                    .pick(
+                        "合并结果中仍有冲突标记，请处理后再应用",
+                        "The result still contains conflict markers. Resolve them before applying.",
+                    )
+                    .to_owned(),
+            );
             cx.notify();
             return;
         }
@@ -352,6 +367,7 @@ impl CodeTabView {
     }
 
     fn render_merge(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let language = crate::gpui_shell::config::ui_language(cx);
         let merge = self.merge.as_ref().expect("merge renderer requires merge state");
         let theme = cx.theme();
         let muted = theme.muted_foreground;
@@ -362,17 +378,34 @@ impl CodeTabView {
         let ready = matches!(merge.state, MergeState::Ready);
         let unresolved = contains_conflict_markers(self.input.read(cx).value().as_ref());
         let (status, status_color) = match &merge.state {
-            MergeState::Loading => ("正在读取三个 Git 阶段…".to_owned(), muted),
-            MergeState::Ready if unresolved => ("仍有冲突标记".to_owned(), theme.warning),
-            MergeState::Ready => ("可应用".to_owned(), theme.success),
-            MergeState::Saving => ("正在写回并暂存…".to_owned(), muted),
-            MergeState::Resolved => ("已写回并暂存".to_owned(), theme.success),
+            MergeState::Loading => (
+                language.pick("正在读取三个 Git 阶段…", "Reading Git conflict stages…").to_owned(),
+                muted,
+            ),
+            MergeState::Ready if unresolved => {
+                (language.pick("仍有冲突标记", "Conflict markers remain").to_owned(), theme.warning)
+            },
+            MergeState::Ready => {
+                (language.pick("可应用", "Ready to apply").to_owned(), theme.success)
+            },
+            MergeState::Saving => {
+                (language.pick("正在写回并暂存…", "Writing changes and staging…").to_owned(), muted)
+            },
+            MergeState::Resolved => {
+                (language.pick("已写回并暂存", "Written and staged").to_owned(), theme.success)
+            },
             MergeState::Error(error) => (error.clone(), theme.danger),
         };
-        let ours_label =
-            if merge.ours_missing { "当前版本（文件不存在）" } else { "当前版本" };
-        let theirs_label =
-            if merge.theirs_missing { "传入版本（文件不存在）" } else { "传入版本" };
+        let ours_label = if merge.ours_missing {
+            language.pick("当前版本（文件不存在）", "Current version (file missing)")
+        } else {
+            language.pick("当前版本", "Current version")
+        };
+        let theirs_label = if merge.theirs_missing {
+            language.pick("传入版本（文件不存在）", "Incoming version (file missing)")
+        } else {
+            language.pick("传入版本", "Incoming version")
+        };
 
         v_flex()
             .size_full()
@@ -409,7 +442,7 @@ impl CodeTabView {
                             .icon(IconName::Redo2)
                             .ghost()
                             .xsmall()
-                            .tooltip("重新读取冲突阶段")
+                            .tooltip(language.pick("重新读取冲突阶段", "Reload conflict stages"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.reload_git_merge(window, cx);
                             })),
@@ -417,13 +450,19 @@ impl CodeTabView {
                     .child(
                         Button::new("merge-apply")
                             .icon(IconName::Check)
-                            .label("应用并暂存")
+                            .label(language.pick("应用并暂存", "Apply and stage"))
                             .small()
                             .disabled(!ready || unresolved)
                             .tooltip(if unresolved {
-                                "请先清除合并结果中的冲突标记"
+                                language.pick(
+                                    "请先清除合并结果中的冲突标记",
+                                    "Resolve conflict markers before applying",
+                                )
                             } else {
-                                "写回工作树并执行 git add"
+                                language.pick(
+                                    "写回工作树并执行 git add",
+                                    "Write to the working tree and run git add",
+                                )
                             })
                             .on_click(cx.listener(|this, _, _, cx| this.save_git_merge(cx))),
                     ),
@@ -456,7 +495,10 @@ impl CodeTabView {
                                 .ghost()
                                 .xsmall()
                                 .disabled(!ready)
-                                .tooltip("用当前版本替换合并结果")
+                                .tooltip(language.pick(
+                                    "用当前版本替换合并结果",
+                                    "Replace the merge result with the current version",
+                                ))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.adopt_ours(window, cx);
                                 })),
@@ -467,7 +509,7 @@ impl CodeTabView {
                         muted,
                     ))
                     .child(merge_pane(
-                        "合并结果（可编辑）",
+                        language.pick("合并结果（可编辑）", "Merge result (editable)"),
                         &self.input,
                         false,
                         None,
@@ -486,7 +528,10 @@ impl CodeTabView {
                                 .ghost()
                                 .xsmall()
                                 .disabled(!ready)
-                                .tooltip("用传入版本替换合并结果")
+                                .tooltip(language.pick(
+                                    "用传入版本替换合并结果",
+                                    "Replace the merge result with the incoming version",
+                                ))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.adopt_theirs(window, cx);
                                 })),
@@ -597,46 +642,83 @@ fn contains_conflict_markers(text: &str) -> bool {
 }
 
 fn validate_relative_path(path: &str) -> Result<(), String> {
+    let language = current_ui_language();
     if path.is_empty() || path.chars().any(char::is_control) {
-        return Err("冲突文件路径无效".to_owned());
+        return Err(language
+            .pick("冲突文件路径无效", "The conflict file path is invalid.")
+            .to_owned());
     }
     let local = Path::new(path);
     if local.components().any(|component| {
         matches!(component, Component::Prefix(_) | Component::RootDir | Component::ParentDir)
     }) || path.split('/').any(|part| part == "..")
     {
-        return Err("冲突文件不在当前仓库内".to_owned());
+        return Err(language
+            .pick("冲突文件不在当前仓库内", "The conflict file is outside the repository.")
+            .to_owned());
     }
     Ok(())
 }
 
 fn load_conflict(key: &MergeKey) -> Result<ConflictDocument, String> {
+    let language = current_ui_language();
     validate_relative_path(&key.relative_path)?;
     let ours = read_stage(key, 2)?;
     let theirs = read_stage(key, 3)?;
     if ours.is_none() && theirs.is_none() {
-        return Err("Git 索引里没有可合并的 :2/:3 阶段".to_owned());
+        return Err(language
+            .pick(
+                "Git 索引里没有可合并的 :2/:3 阶段",
+                "The Git index has no mergeable :2/:3 stages.",
+            )
+            .to_owned());
     }
     let result = read_worktree_file(key)?;
     Ok(ConflictDocument {
-        ours: ours.map(|bytes| decode_conflict_text(bytes, "当前版本")).transpose()?,
-        theirs: theirs.map(|bytes| decode_conflict_text(bytes, "传入版本")).transpose()?,
-        result: decode_conflict_text(result, "合并结果")?,
+        ours: ours
+            .map(|bytes| {
+                decode_conflict_text(bytes, language.pick("当前版本", "Current version"), language)
+            })
+            .transpose()?,
+        theirs: theirs
+            .map(|bytes| {
+                decode_conflict_text(bytes, language.pick("传入版本", "Incoming version"), language)
+            })
+            .transpose()?,
+        result: decode_conflict_text(result, language.pick("合并结果", "Merge result"), language)?,
     })
 }
 
-fn decode_conflict_text(bytes: Vec<u8>, label: &str) -> Result<String, String> {
+fn decode_conflict_text(
+    bytes: Vec<u8>,
+    label: &str,
+    language: crate::i18n::UiLanguage,
+) -> Result<String, String> {
     if bytes.len() > MAX_CODE_BYTES {
-        return Err(format!(
-            "{label}超过 {} MB，不能在三栏编辑器中安全处理",
-            MAX_CODE_BYTES / 1024 / 1024
-        ));
+        let megabytes = MAX_CODE_BYTES / 1024 / 1024;
+        return Err(if matches!(language, crate::i18n::UiLanguage::ZhCn) {
+            format!("{label}超过 {megabytes} MB，不能在三栏编辑器中安全处理")
+        } else {
+            format!(
+                "{label} exceeds {megabytes} MB and cannot be safely handled in the three-pane editor."
+            )
+        });
     }
     if bytes.contains(&0) {
-        return Err(format!("{label}是二进制内容，三栏文本合并器无法处理"));
+        return Err(format!(
+            "{label}{}",
+            language.pick(
+                "是二进制内容，三栏文本合并器无法处理",
+                " is binary data and cannot be handled by the three-pane text merger."
+            )
+        ));
     }
-    String::from_utf8(bytes)
-        .map_err(|_| format!("{label}不是 UTF-8 文本，已阻止可能破坏编码的写回"))
+    String::from_utf8(bytes).map_err(|_| {
+        format!(
+            "{label}{}",
+            language.pick("不是 UTF-8 文本，已阻止可能破坏编码的写回", " is not UTF-8 text; writing it back could corrupt its encoding, so the write was blocked.")
+        )
+    })
 }
 
 fn read_stage(key: &MergeKey, stage: u8) -> Result<Option<Vec<u8>>, String> {
@@ -646,11 +728,15 @@ fn read_stage(key: &MergeKey, stage: u8) -> Result<Option<Vec<u8>>, String> {
 }
 
 fn read_worktree_file(key: &MergeKey) -> Result<Vec<u8>, String> {
+    let language = current_ui_language();
     match &key.location {
         GitLocation::Local { root } => match std::fs::read(root.join(&key.relative_path)) {
             Ok(bytes) => Ok(bytes),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-            Err(error) => Err(format!("读取合并结果失败: {error}")),
+            Err(error) => Err(format!(
+                "{}: {error}",
+                language.pick("读取合并结果失败", "Could not read the merge result")
+            )),
         },
         GitLocation::Wsl { distro, root } => {
             let path = join_guest_path(root, &key.relative_path);
@@ -658,21 +744,41 @@ fn read_worktree_file(key: &MergeKey) -> Result<Vec<u8>, String> {
             let output = crate::platform::process::hidden_command(&mut command)
                 .args(["-d", distro, "--", "cat", "--", path.as_str()])
                 .output()
-                .map_err(|error| format!("无法从 WSL 读取冲突文件: {error}"))?;
+                .map_err(|error| {
+                    format!(
+                        "{}: {error}",
+                        language.pick(
+                            "无法从 WSL 读取冲突文件",
+                            "Could not read the conflict file from WSL"
+                        )
+                    )
+                })?;
             if output.status.success() { Ok(output.stdout) } else { Ok(Vec::new()) }
         },
     }
 }
 
 fn write_conflict_result(key: &MergeKey, result: String) -> Result<(), String> {
+    let language = current_ui_language();
     validate_relative_path(&key.relative_path)?;
     if result.len() > MAX_CODE_BYTES {
-        return Err(format!("合并结果超过 {} MB，已取消写回", MAX_CODE_BYTES / 1024 / 1024));
+        return Err(if matches!(language, crate::i18n::UiLanguage::ZhCn) {
+            format!("合并结果超过 {} MB，已取消写回", MAX_CODE_BYTES / 1024 / 1024)
+        } else {
+            format!(
+                "The merge result exceeds {} MB; writing it back was cancelled.",
+                MAX_CODE_BYTES / 1024 / 1024
+            )
+        });
     }
     match &key.location {
         GitLocation::Local { root } => {
-            std::fs::write(root.join(&key.relative_path), result.as_bytes())
-                .map_err(|error| format!("写回合并结果失败: {error}"))?
+            std::fs::write(root.join(&key.relative_path), result.as_bytes()).map_err(|error| {
+                format!(
+                    "{}: {error}",
+                    language.pick("写回合并结果失败", "Could not write back the merge result")
+                )
+            })?
         },
         GitLocation::Wsl { distro, root } => {
             let path = join_guest_path(root, &key.relative_path);
@@ -683,31 +789,64 @@ fn write_conflict_result(key: &MergeKey, result: String) -> Result<(), String> {
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped())
                 .spawn()
-                .map_err(|error| format!("无法向 WSL 写回冲突文件: {error}"))?;
+                .map_err(|error| {
+                    format!(
+                        "{}: {error}",
+                        language.pick(
+                            "无法向 WSL 写回冲突文件",
+                            "Could not write the conflict file back to WSL"
+                        )
+                    )
+                })?;
             let write_result = child
                 .stdin
                 .take()
-                .ok_or("无法打开 WSL 写入管道".to_owned())?
+                .ok_or_else(|| {
+                    language
+                        .pick("无法打开 WSL 写入管道", "Could not open the WSL write pipe")
+                        .to_owned()
+                })?
                 .write_all(result.as_bytes());
             if let Err(error) = write_result {
                 let _ = child.kill();
-                return Err(format!("写入 WSL 冲突文件失败: {error}"));
+                return Err(format!(
+                    "{}: {error}",
+                    language
+                        .pick("写入 WSL 冲突文件失败", "Could not write the conflict file to WSL")
+                ));
             }
-            let output =
-                child.wait_with_output().map_err(|error| format!("等待 WSL 写回失败: {error}"))?;
+            let output = child.wait_with_output().map_err(|error| {
+                format!(
+                    "{}: {error}",
+                    language.pick(
+                        "等待 WSL 写回失败",
+                        "Failed while waiting for WSL to finish writing"
+                    )
+                )
+            })?;
             if !output.status.success() {
-                return Err(first_command_error(&output.stderr, "WSL 写回失败"));
+                return Err(first_command_error(
+                    &output.stderr,
+                    language.pick("WSL 写回失败", "WSL write failed"),
+                ));
             }
         },
     }
     let staged = git_command(&key.location, &["add", "--", &key.relative_path])?;
     if !staged.status.success() {
-        return Err(first_command_error(&staged.stderr, "git add 失败；文件已写回但尚未暂存"));
+        return Err(first_command_error(
+            &staged.stderr,
+            language.pick(
+                "git add 失败；文件已写回但尚未暂存",
+                "git add failed; the file was written but not staged",
+            ),
+        ));
     }
     Ok(())
 }
 
 fn git_command(location: &GitLocation, args: &[&str]) -> Result<std::process::Output, String> {
+    let language = current_ui_language();
     let mut command = match location {
         GitLocation::Local { root } => {
             let mut command = Command::new("git");
@@ -728,7 +867,7 @@ fn git_command(location: &GitLocation, args: &[&str]) -> Result<std::process::Ou
     crate::platform::process::hidden_command(&mut command)
         .args(args)
         .output()
-        .map_err(|error| format!("无法运行 git: {error}"))
+        .map_err(|error| format!("{}: {error}", language.pick("无法运行 git", "Could not run git")))
 }
 
 fn first_command_error(stderr: &[u8], fallback: &str) -> String {

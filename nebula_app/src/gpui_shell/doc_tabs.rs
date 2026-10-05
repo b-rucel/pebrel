@@ -126,10 +126,16 @@ impl ImageTabView {
 
 /// 与壁纸解码同款：RGBA8 → BGRA（gpui 帧通道序）。跑在后台线程。
 fn decode_bgra(path: &Path) -> Result<Arc<RenderImage>, String> {
-    let bytes =
-        std::fs::read(path).map_err(|error| format!("无法读取 {}: {error}", path.display()))?;
+    let language =
+        crate::i18n::LanguagePreference::from(nebula_settings::RuntimeSettings::load().language)
+            .resolved();
+    let bytes = std::fs::read(path).map_err(|error| {
+        format!("{} {}: {error}", language.pick("无法读取", "Could not read"), path.display())
+    })?;
     let mut rgba = image::load_from_memory(&bytes)
-        .map_err(|error| format!("无法解码 {}: {error}", path.display()))?
+        .map_err(|error| {
+            format!("{} {}: {error}", language.pick("无法解码", "Could not decode"), path.display())
+        })?
         .into_rgba8();
     for pixel in rgba.chunks_exact_mut(4) {
         pixel.swap(0, 2);
@@ -180,7 +186,11 @@ impl Render for ImageTabView {
         let status: Option<String> = if let Some(error) = &self.error {
             Some(error.clone())
         } else if self.image.is_none() {
-            Some(String::from("正在加载图片…"))
+            Some(
+                crate::gpui_shell::config::ui_language(cx)
+                    .pick("正在加载图片…", "Loading image…")
+                    .to_owned(),
+            )
         } else {
             None
         };

@@ -167,9 +167,9 @@ impl SettingsPane {
         v_flex()
             .w_full()
             .gap(px(GROUP_GAP))
+            .child(custom_background)
             .child(terminal)
             .child(cursor)
             .child(interface)
-            .child(custom_background)
     }
 }

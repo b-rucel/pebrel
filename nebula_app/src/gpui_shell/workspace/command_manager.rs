@@ -4,6 +4,7 @@
 //! 弹窗覆盖在终端之上而不参与主布局，避免为了短时管理命令永久压缩 PTY。
 
 use super::*;
+use crate::i18n::Message;
 mod groups;
 mod rows;
 pub(super) use groups::GroupMenu;
@@ -152,11 +153,12 @@ impl NebulaWorkspace {
         }
         self.dismiss_palette_state();
         if let Err(error) = self.saved_commands.reload() {
+            let language = crate::gpui_shell::config::ui_language(cx);
             crate::gpui_shell::toast::toast(
                 window,
                 cx,
                 crate::display::ToastKind::Warning,
-                format!("无法读取已保存命令：{error}"),
+                format!("{}: {error}", language.text(Message::CommandsLoadFailed)),
             );
         }
         self.command_manager_open = true;
@@ -225,13 +227,14 @@ impl NebulaWorkspace {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
+        let language = crate::gpui_shell::config::ui_language(cx);
         let view = self.tabs.get(self.active).and_then(WorkspaceTab::focused_view).cloned();
         let Some(view) = view else {
             crate::gpui_shell::toast::toast(
                 window,
                 cx,
                 crate::display::ToastKind::Warning,
-                "当前标签不是可用的终端",
+                language.text(Message::CommandsTerminalUnavailable),
             );
             return;
         };
@@ -248,7 +251,7 @@ impl NebulaWorkspace {
                 window,
                 cx,
                 crate::display::ToastKind::Warning,
-                format!("无法发送命令：{}", error.message),
+                format!("{}: {}", language.text(Message::CommandsSendFailed), error.message),
             ),
         }
     }
@@ -260,7 +263,13 @@ impl NebulaWorkspace {
         cx: &mut Context<'_, Self>,
     ) {
         cx.write_to_clipboard(ClipboardItem::new_string(command.command.clone()));
-        crate::gpui_shell::toast::toast(window, cx, crate::display::ToastKind::Info, "命令已复制");
+        let language = crate::gpui_shell::config::ui_language(cx);
+        crate::gpui_shell::toast::toast(
+            window,
+            cx,
+            crate::display::ToastKind::Info,
+            language.text(Message::CommandsCopied),
+        );
     }
 
     fn open_saved_command_editor(
@@ -273,11 +282,12 @@ impl NebulaWorkspace {
             self.available_saved_commands(cx).into_iter().find(|command| command.id == id)
         });
         if edit_id.is_some() && current.is_none() {
+            let language = crate::gpui_shell::config::ui_language(cx);
             crate::gpui_shell::toast::toast(
                 window,
                 cx,
                 crate::display::ToastKind::Warning,
-                "这条命令已不存在",
+                language.text(Message::CommandsMissing),
             );
             return;
         }
@@ -291,15 +301,14 @@ impl NebulaWorkspace {
             current.as_ref().is_none_or(|command| command.append_enter),
         ));
         let name_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(language.pick("例如：启动开发服务", "For example: Start dev server"))
+            InputState::new(window, cx).placeholder(language.text(Message::CommandsNameHint))
         });
         name_input.update(cx, |input, cx| input.set_value(initial_name, window, cx));
         let command_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
                 .soft_wrap(true)
-                .placeholder(language.pick("输入 Shell 命令", "Enter a shell command"))
+                .placeholder(language.text(Message::CommandsInputHint))
         });
         command_input.update(cx, |input, cx| input.set_value(initial_command, window, cx));
 
@@ -309,12 +318,12 @@ impl NebulaWorkspace {
         let dialog_command = command_input.clone();
         let dialog_append = append_enter.clone();
         let title = if edit_id.is_some() {
-            language.pick("编辑命令", "Edit Command")
+            language.text(Message::CommandsEditTitle)
         } else {
-            language.pick("新增命令", "Add Command")
+            language.text(Message::CommandsNewTitle)
         };
-        let save_label = language.pick("保存", "Save");
-        let cancel_label = language.pick("取消", "Cancel");
+        let save_label = language.text(Message::CommonSave);
+        let cancel_label = language.text(Message::CommonCancel);
 
         window.open_dialog(cx, move |dialog, window, cx| {
             let checkbox_state = dialog_append.clone();
@@ -333,7 +342,12 @@ impl NebulaWorkspace {
                     v_flex()
                         .w_full()
                         .gap_1()
-                        .child(div().text_sm().font_semibold().child(language.pick("名称", "Name")))
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_semibold()
+                                .child(language.text(Message::CommandsName)),
+                        )
                         .child(Input::new(&name).w_full()),
                 )
                 .child(
@@ -341,30 +355,28 @@ impl NebulaWorkspace {
                         .w_full()
                         .gap_1()
                         .child(
-                            div().text_sm().font_semibold().child(language.pick("命令", "Command")),
+                            div()
+                                .text_sm()
+                                .font_semibold()
+                                .child(language.text(Message::CommandsCommand)),
                         )
                         .child(command_editor_input(&command, cx)),
                 )
                 .child(
                     gpui_component::checkbox::Checkbox::new("saved-command-append-enter")
                         .checked(checkbox_state.get())
-                        .label(
-                            language.pick(
-                                "插入后立即按 Enter 执行",
-                                "Press Enter and run after inserting",
-                            ),
-                        )
+                        .label(language.text(Message::CommandsRunAfterInsert))
                         .on_click(move |checked, window, _| {
                             checkbox_state.set(*checked);
                             window.refresh();
                         }),
                 )
-                .child(div().text_xs().text_color(cx.theme().muted_foreground).child(
-                    language.pick(
-                        "关闭时只把命令放入当前终端，适合运行前补参数。",
-                        "When off, the command is inserted for editing.",
-                    ),
-                ));
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(language.text(Message::CommandsInsertDescription)),
+                );
             let footer = DialogFooter::new()
                 .child(div().flex_1())
                 .child(
@@ -415,7 +427,7 @@ impl NebulaWorkspace {
                                 window,
                                 cx,
                                 crate::display::ToastKind::Success,
-                                language.pick("命令已保存", "Command saved"),
+                                language.text(Message::CommandsSaved),
                             );
                             true
                         },
@@ -424,7 +436,7 @@ impl NebulaWorkspace {
                                 window,
                                 cx,
                                 crate::display::ToastKind::Warning,
-                                format!("{}: {error}", language.pick("保存失败", "Save failed")),
+                                format!("{}: {error}", language.text(Message::CommandsSaveFailed)),
                             );
                             false
                         },
@@ -460,34 +472,36 @@ impl NebulaWorkspace {
             let delete_workspace = dialog_workspace.clone();
             let close_workspace = dialog_workspace.clone();
             let delete_id = id.clone();
-            let body = v_flex()
-                .w_full()
-                .gap_2()
-                .child(div().text_sm().child(format!(
-                    "{}“{}”？",
-                    language.pick("确定删除命令 ", "Delete command "),
-                    command_name
-                )))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(language.pick("删除后无法撤销。", "This action cannot be undone.")),
-                );
+            let body =
+                v_flex()
+                    .w_full()
+                    .gap_2()
+                    .child(div().text_sm().child(
+                        language.format(
+                            Message::CommandsDeleteConfirmation,
+                            &[("name", &command_name)],
+                        ),
+                    ))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(language.text(Message::CommandsDeleteIrreversible)),
+                    );
             let footer = DialogFooter::new()
                 .child(div().flex_1())
                 .child(
                     DialogClose::new().child(
                         Button::new("saved-command-delete-cancel")
                             .debug_selector(|| "saved-command-delete-cancel".into())
-                            .label(language.pick("取消", "Cancel")),
+                            .label(language.text(Message::CommonCancel)),
                     ),
                 )
                 .child(
                     DialogAction::new().child(
                         Button::new("saved-command-delete-confirm")
                             .debug_selector(|| "saved-command-delete-confirm".into())
-                            .label(language.pick("删除", "Delete"))
+                            .label(language.text(Message::CommonDelete))
                             .danger(),
                     ),
                 );
@@ -498,7 +512,7 @@ impl NebulaWorkspace {
                     div()
                         .text_lg()
                         .font_semibold()
-                        .child(language.pick("删除已保存命令", "Delete Saved Command")),
+                        .child(language.text(Message::CommandsDeleteTitle)),
                 )
                 .footer(footer)
                 .child(body)
@@ -523,7 +537,10 @@ impl NebulaWorkspace {
                                 window,
                                 cx,
                                 crate::display::ToastKind::Warning,
-                                format!("{}: {error}", language.pick("删除失败", "Delete failed")),
+                                format!(
+                                    "{}: {error}",
+                                    language.text(Message::CommandsDeleteFailed)
+                                ),
                             );
                             false
                         },
@@ -607,7 +624,7 @@ impl NebulaWorkspace {
                     div()
                         .text_sm()
                         .text_color(foreground)
-                        .child(language.pick("没有匹配的命令", "No matching commands")),
+                        .child(language.text(Message::CommandsNoMatches)),
                 )
                 .into_any_element()
         } else {

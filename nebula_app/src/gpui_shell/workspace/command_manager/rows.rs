@@ -33,14 +33,14 @@ impl NebulaWorkspace {
         let mode_label = if builtin {
             language.text(crate::i18n::Message::CommandsBuiltinLabel)
         } else if command.append_enter {
-            language.pick("运行", "Run")
+            language.text(crate::i18n::Message::CommandsRun)
         } else {
-            language.pick("插入", "Insert")
+            language.text(crate::i18n::Message::CommandsInsert)
         };
         let run_tooltip = if command.append_enter {
-            language.pick("运行命令", "Run command")
+            language.text(crate::i18n::Message::CommandsRunTooltip)
         } else {
-            language.pick("插入到当前终端", "Insert into current terminal")
+            language.text(crate::i18n::Message::CommandsInsertTooltip)
         };
         let run_icon = command_run_icon(builtin, command.append_enter);
         let drag = CommandDrag::new(&command);
@@ -168,7 +168,7 @@ impl NebulaWorkspace {
                             .icon(IconName::Copy)
                             .ghost()
                             .xsmall()
-                            .tooltip(language.pick("复制命令", "Copy command"))
+                            .tooltip(language.text(crate::i18n::Message::CommandsCopyTooltip))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 this.copy_saved_command(&copy_command, window, cx);
@@ -182,7 +182,7 @@ impl NebulaWorkspace {
                             .tooltip(if builtin {
                                 language.text(crate::i18n::Message::CommandsSaveCopy)
                             } else {
-                                language.pick("编辑命令", "Edit command")
+                                language.text(crate::i18n::Message::CommandsEditTooltip)
                             })
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
@@ -195,7 +195,7 @@ impl NebulaWorkspace {
                             .debug_selector(move || format!("saved-command-delete-{index}"))
                             .ghost()
                             .xsmall()
-                            .tooltip(language.pick("删除命令", "Delete command"))
+                            .tooltip(language.text(crate::i18n::Message::CommandsDeleteTooltip))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 this.open_delete_saved_command_dialog(

@@ -223,7 +223,10 @@ impl Notification {
                     p.clone(),
                     notification_language().text(crate::i18n::Message::NotificationBell).to_owned(),
                 ),
-                None => (crate::brand::NAME.to_owned(), "终端响铃".to_owned()),
+                None => (
+                    crate::brand::NAME.to_owned(),
+                    notification_language().text(crate::i18n::Message::NotificationBell).to_owned(),
+                ),
             },
             Self::CommandDone { duration, program } => (
                 program.clone().unwrap_or_else(|| crate::brand::NAME.to_owned()),
@@ -249,9 +252,13 @@ impl Notification {
             Self::AiTurn { program, message, attention } => {
                 let body = message.clone().unwrap_or_else(|| {
                     if *attention {
-                        "需要你的确认或输入".to_owned()
+                        notification_language()
+                            .text(crate::i18n::Message::NotificationAiAttention)
+                            .to_owned()
                     } else {
-                        "回合完成，等待下一条指令".to_owned()
+                        notification_language()
+                            .text(crate::i18n::Message::NotificationAiWaiting)
+                            .to_owned()
                     }
                 });
                 (program.clone(), body)

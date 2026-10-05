@@ -89,6 +89,43 @@ pub(super) fn copy_working_directory_item(
 }
 
 impl NebulaWorkspace {
+    pub(super) fn choose_tab_background_image(&mut self, ix: usize, cx: &mut Context<Self>) {
+        let language = crate::gpui_shell::config::ui_language(cx);
+        let tab_id = self.meta(ix).runtime_id;
+        let prompt = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(language.text(Message::CommonBackgroundImage).into()),
+        });
+        let workspace = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            let Ok(Ok(Some(paths))) = prompt.await else { return };
+            let Some(path) = paths.into_iter().next() else { return };
+            let path = path.to_string_lossy().into_owned();
+            let _ = workspace.update(cx, |workspace, cx| {
+                let Some(ix) = workspace.tab_meta.iter().position(|meta| meta.runtime_id == tab_id)
+                else {
+                    return;
+                };
+                workspace.set_tab_background_image(ix, Some(path), cx);
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn set_tab_background_image(
+        &mut self,
+        ix: usize,
+        path: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(meta) = self.tab_meta.get_mut(ix) {
+            meta.background_image = path;
+            cx.notify();
+        }
+    }
+
     /// 右键：先选中该行（旧壳 chrome 同惯例），再按当下的 hook 身份现查
     /// fork 资格，最后把菜单交给根上那一份宿主。
     pub(super) fn open_tab_context_menu(
@@ -105,7 +142,9 @@ impl NebulaWorkspace {
         let terminal = self.tabs.get(ix).is_some_and(WorkspaceTab::is_terminal);
         let language = crate::gpui_shell::config::ui_language(cx);
         let ai_fork = tab_ai_fork_enabled(self, ix, cx);
-        let color = self.meta(ix).color;
+        let meta = self.meta(ix);
+        let color = meta.color;
+        let has_background_image = meta.background_image.is_some();
         let tab_count = self.tabs.len();
         let retry =
             self.tabs[ix].focused_view().filter(|view| view.read(cx).can_retry_recovery()).cloned();
@@ -143,6 +182,7 @@ impl NebulaWorkspace {
                 terminal,
                 ai_fork,
                 color,
+                has_background_image,
                 tab_count,
                 language,
             )
@@ -183,6 +223,7 @@ impl NebulaWorkspace {
         terminal: bool,
         ai_fork: bool,
         color: Option<Rgb>,
+        has_background_image: bool,
         tab_count: usize,
         language: UiLanguage,
     ) -> PopupMenu {
@@ -206,6 +247,8 @@ impl NebulaWorkspace {
             let duplicate = workspace.clone();
             let move_to_window = workspace.clone();
             let export = workspace.clone();
+            let set_background = workspace.clone();
+            let clear_background = workspace.clone();
             let split_right = workspace.clone();
             let split_down = workspace.clone();
             menu = menu
@@ -238,6 +281,27 @@ impl NebulaWorkspace {
                         }
                     },
                 ))
+                .item(
+                    PopupMenuItem::new(language.text(Message::CommonBackgroundImage))
+                        .on_click(move |_, _, cx| {
+                            if let Some(workspace) = set_background.upgrade() {
+                                workspace.update(cx, |workspace, cx| {
+                                    workspace.choose_tab_background_image(ix, cx);
+                                });
+                            }
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new(language.text(Message::CommonClear))
+                        .disabled(!has_background_image)
+                        .on_click(move |_, _, cx| {
+                            if let Some(workspace) = clear_background.upgrade() {
+                                workspace.update(cx, |workspace, cx| {
+                                    workspace.set_tab_background_image(ix, None, cx);
+                                });
+                            }
+                        }),
+                )
                 .separator()
                 // `action` 只用来渲染键帽：handler 存在时组件不会 dispatch
                 // 它（见 PopupMenu::confirm），所以命令仍然作用在 `ix` 上。

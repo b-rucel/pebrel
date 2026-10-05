@@ -88,6 +88,7 @@ mod tab_drag;
 mod tab_duplication;
 mod tab_menu;
 mod tab_presentation;
+mod tab_wallpaper;
 use tab_presentation::TabMeta;
 use tab_presentation::TabPresentation;
 mod tab_scroll;
@@ -2333,19 +2334,25 @@ impl NebulaWorkspace {
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(path))) = prompt.await else { return };
             let result = crate::session::save_to(&path, &export);
-            let _ = this.update_in(cx, |_, window, cx| match result {
-                Ok(()) => crate::gpui_shell::toast::toast(
-                    window,
-                    cx,
-                    crate::display::ToastKind::Success,
-                    format!("已导出到 {}", path.display()),
-                ),
-                Err(error) => crate::gpui_shell::toast::toast(
-                    window,
-                    cx,
-                    crate::display::ToastKind::Warning,
-                    format!("工作区导出失败：{error}"),
-                ),
+            let _ = this.update_in(cx, |_, window, cx| {
+                let language = crate::gpui_shell::config::ui_language(cx);
+                match result {
+                    Ok(()) => crate::gpui_shell::toast::toast(
+                        window,
+                        cx,
+                        crate::display::ToastKind::Success,
+                        format!("{} {}", language.pick("已导出到", "Exported to"), path.display()),
+                    ),
+                    Err(error) => crate::gpui_shell::toast::toast(
+                        window,
+                        cx,
+                        crate::display::ToastKind::Warning,
+                        format!(
+                            "{}: {error}",
+                            language.pick("工作区导出失败", "Workspace export failed")
+                        ),
+                    ),
+                }
             });
         })
         .detach();
@@ -3051,10 +3058,12 @@ impl Render for NebulaWorkspace {
                 this.open_quick_jump_palette(window, cx);
             }))
             .child(
-                // 用户显式配置的背景图画在 chrome 之下；系统 Mica/Aero/Acrylic
-                // 位于整个 GPUI 内容层下方，由 DWM 合成，不能在这里读取壁纸仿画。
-                // 拓展模式只在此绘图，壳/卡衬底在其上保留原有文字对比度。
-                crate::gpui_shell::wallpaper::window_layer(cx),
+                // The active tab's wallpaper (the global image when the tab has no
+                // override) is drawn below the chrome with the shared options. System
+                // Mica/Aero/Acrylic is composited by DWM, so the system wallpaper cannot
+                // be read and imitated here. Extend mode draws only here; the shell and
+                // card backings keep their text contrast on top.
+                self.window_wallpaper_layer(cx),
             )
             .child(
                 self.render_window_title_bar(
@@ -3129,7 +3138,7 @@ impl Render for NebulaWorkspace {
                                     // 壁纸层（卡底色之上、内容之下，覆盖整卡含
                                     // 内边距带）：卡模式按卡定位；拓展模式由
                                     // 窗口底层统一绘图，此处不覆盖原有衬底。
-                                    crate::gpui_shell::wallpaper::card_layer(cx),
+                                    self.tab_wallpaper_layer(cx),
                                 )
                                 .children(content),
                         )

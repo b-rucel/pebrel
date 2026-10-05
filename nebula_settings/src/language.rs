@@ -8,12 +8,11 @@ pub struct LanguageInfo {
 }
 
 macro_rules! languages {
-    ($( $variant:ident => ($code:literal, $native:literal, $component:literal) ),+ $(,)?) => {
+    ($( $(#[$attribute:meta])* $variant:ident => ($code:literal, $native:literal, $component:literal) ),+ $(,)?) => {
         #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
         pub enum LanguagePref {
-            #[default]
             System,
-            $( $variant, )+
+            $( $(#[$attribute])* $variant, )+
         }
 
         impl LanguagePref {
@@ -56,6 +55,7 @@ macro_rules! languages {
 
 languages! {
     ZhCn => ("zh-CN", "简体中文", "zh-CN"),
+    #[default]
     EnUs => ("en-US", "English", "en"),
     ZhTw => ("zh-TW", "繁體中文", "zh-TW"),
     FrFr => ("fr-FR", "Français", "en"),
@@ -107,6 +107,7 @@ mod tests {
     #[test]
     fn every_language_round_trips_without_changing_saved_values() {
         assert_eq!(&LanguagePref::VALUES[..3], &["system", "zh-CN", "en-US"]);
+        assert_eq!(LanguagePref::default(), LanguagePref::EnUs);
         for (preference, value) in LanguagePref::ALL.iter().zip(LanguagePref::VALUES) {
             assert_eq!(preference.settings_value(), *value);
             assert_eq!(LanguagePref::from_settings(value), Some(*preference));

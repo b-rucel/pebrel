@@ -930,6 +930,7 @@ mod boot_breaker_tests {
             cwd: String::new(),
             custom_name: None,
             color: None,
+            background_image: None,
             launch: Some(launch.clone()),
             layout: Some(LayoutSession::Pane {
                 custom_name: None,

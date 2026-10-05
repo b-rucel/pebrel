@@ -81,6 +81,14 @@ x11-clipboard = { git = "https://github.com/quininer/x11-clipboard.git", rev = "
 # 488c036a's Windows 11 mixed-DPI positioning fix. The upstream revision has
 # since moved to a different EventLoop API and cannot be used directly here.
 winit = { path = "third_party/winit-0.30.13" }
+# macOS actionable toasts wait for a response, and upstream polls
+# `deliveredNotifications` (a synchronous XPC call that decodes the whole list)
+# from one 0.5 s main-run-loop timer per pending toast. This copy replaces them
+# with one shared poller that backs off with the list size. Only
+# `objc/notify.m` differs from 0.6.15; see
+# architecture/notes/nebula_app/platform/notifications/2026-10-04-macos-toast-poll-cost.md.
+# Drop it once crates.io ships an equivalent fix.
+mac-notification-sys = { path = "third_party/mac-notification-sys-0.6.15" }
 
 # ---- GPUI v1.16.1 固定基线 ------------------------------------------------
 #

@@ -36,6 +36,7 @@ impl NebulaWorkspace {
         cx: &mut Context<Self>,
     ) -> bool {
         use crate::display::ToastKind;
+        let language = crate::gpui_shell::config::ui_language(cx);
 
         let Some(mut session) = crate::session::load() else { return false };
         if !crate::session::should_restore(&session) {
@@ -47,7 +48,14 @@ impl NebulaWorkspace {
                         window,
                         cx,
                         ToastKind::Warning,
-                        format!("连续多次启动未完成恢复，已跳过；现场保存在 {}", path.display()),
+                        format!(
+                            "{} {}",
+                            language.pick(
+                                "连续多次启动未完成恢复，已跳过；现场保存在",
+                                "Session restore failed repeatedly and was skipped. Recovery data is saved at"
+                            ),
+                            path.display()
+                        ),
                     );
                 }
             }
@@ -67,9 +75,15 @@ impl NebulaWorkspace {
         self.active = session.active_tab.min(self.tabs.len().saturating_sub(1));
         self.focus_active(window, cx);
         let text = if crashed {
-            format!("上次未正常退出，已恢复 {restored} 个标签")
+            language.format(
+                crate::i18n::Message::SessionRestoreAfterCrash,
+                &[("count", &restored.to_string())],
+            )
         } else {
-            format!("已恢复 {restored} 个标签")
+            language.format(
+                crate::i18n::Message::SessionRestoreSuccess,
+                &[("count", &restored.to_string())],
+            )
         };
         crate::gpui_shell::toast::toast(window, cx, ToastKind::Success, text);
         cx.notify();
@@ -173,6 +187,7 @@ impl NebulaWorkspace {
                 runtime_id: Default::default(),
                 custom_name: tab.custom_name.clone(),
                 color: tab.color,
+                background_image: tab.background_image.clone(),
                 shell_tag: Self::launch_shell_tag(&saved_launch),
                 launch: Some(saved_launch),
                 has_bell: false,
@@ -242,6 +257,7 @@ impl NebulaWorkspace {
                 cwd,
                 custom_name: meta.custom_name,
                 color: meta.color,
+                background_image: meta.background_image,
                 launch: Some(launch),
                 layout: Some(layout),
                 active_pane,

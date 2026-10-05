@@ -341,7 +341,14 @@ impl NebulaWorkspace {
         let Some(pane) = self.remote_browser.pane else { return };
         let Some(session) = self.remote_browser.browse_sessions.get(&pane).cloned() else {
             self.remote_browser.loading = false;
-            self.remote_browser.error = Some("远端浏览会话不可用，请重新打开文件抽屉".to_owned());
+            self.remote_browser.error = Some(
+                crate::gpui_shell::config::ui_language(cx)
+                    .pick(
+                        "远端浏览会话不可用，请重新打开文件抽屉",
+                        "The remote browsing session is unavailable. Reopen the file drawer.",
+                    )
+                    .to_owned(),
+            );
             cx.notify();
             return;
         };

@@ -633,13 +633,26 @@ impl TerminalView {
                 self.write_bytes(formatter(self.window_size).into_bytes());
             },
             TermEvent::ChildExit(code) => {
-                self.mark_exited(format!("进程已退出（{code:?}）"), cx);
+                let language = crate::gpui_shell::config::ui_language(cx);
+                self.mark_exited(
+                    format!("{} ({code:?})", language.pick("进程已退出", "Process exited")),
+                    cx,
+                );
             },
             TermEvent::PtyFailure(reason) => {
-                self.mark_exited(format!("PTY 故障：{reason}"), cx);
+                let language = crate::gpui_shell::config::ui_language(cx);
+                self.mark_exited(
+                    format!("{}: {reason}", language.pick("PTY 故障", "PTY failure")),
+                    cx,
+                );
             },
             TermEvent::Exit => {
-                self.mark_exited(String::from("会话已结束"), cx);
+                self.mark_exited(
+                    crate::gpui_shell::config::ui_language(cx)
+                        .pick("会话已结束", "Session ended")
+                        .to_owned(),
+                    cx,
+                );
             },
             TermEvent::CwdReport(_) => {
                 // 标准 OSC 7 / 9;9 的目录上报。只动 cwd，`NEBULA|` 标题带来的

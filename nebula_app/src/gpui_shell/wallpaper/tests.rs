@@ -40,6 +40,7 @@ fn loading_yields_and_layout_opacity_refreshes_reuse_the_same_image(cx: &mut Tes
     cx.update(|cx| {
         update_wallpaper(&rt, 1.0, BlurModeName::None, cx);
         let effects = cx.global::<VisualEffects>();
+        assert!(effects.layout.cover_chrome);
         assert!(effects.loading);
         assert!(effects.wallpaper.as_ref().unwrap().image.is_none());
         assert_eq!(chrome_surface_opacity(cx), 1.0);
@@ -74,9 +75,41 @@ fn loading_yields_and_layout_opacity_refreshes_reuse_the_same_image(cx: &mut Tes
         assert_eq!(chrome_surface_opacity(cx), 0.4);
         rt.background_image_cover_chrome = false;
         update_wallpaper(&rt, 0.8, BlurModeName::None, cx);
+        assert!(!cx.global::<VisualEffects>().layout.cover_chrome);
         assert_eq!(chrome_surface_opacity(cx), 0.8);
         update_wallpaper(&settings(None), 0.8, BlurModeName::None, cx);
         assert_eq!(chrome_surface_opacity(cx), 0.8);
+    });
+}
+
+#[gpui::test]
+fn tab_wallpaper_uses_shared_opacity_and_whole_window_preference(cx: &mut TestAppContext) {
+    let tab_path = PathBuf::from("tab-wallpaper.png");
+    let mut rt = settings(None);
+    rt.background_image_opacity = 0.42;
+    rt.background_image_cover_chrome = true;
+    cx.update(|cx| {
+        update_wallpaper(&rt, 0.9, BlurModeName::None, cx);
+        let texture = Arc::new(RenderImage::new([Frame::new(RgbaImage::from_pixel(
+            1,
+            1,
+            image::Rgba([0, 0, 0, 255]),
+        ))]));
+        cx.global_mut::<VisualEffects>()
+            .tab_wallpapers
+            .insert(tab_path, TabWallpaper { image: texture, width: 1, height: 1 });
+        let effects = cx.global::<VisualEffects>();
+        assert_eq!(effects.layout.opacity, 0.42);
+        assert!(effects.layout.cover_chrome);
+        assert_eq!(chrome_surface_opacity(cx), 0.78);
+
+        rt.background_image_opacity = 0.65;
+        rt.background_image_cover_chrome = false;
+        update_wallpaper(&rt, 0.9, BlurModeName::None, cx);
+        let effects = cx.global::<VisualEffects>();
+        assert_eq!(effects.layout.opacity, 0.65);
+        assert!(!effects.layout.cover_chrome);
+        assert_eq!(chrome_surface_opacity(cx), 0.9);
     });
 }
 
@@ -117,7 +150,6 @@ fn card_and_chrome_share_the_window_anchor_and_preserve_native_physical_size() {
     let mut layout = WallpaperLayout {
         fit: BackgroundImageFit::UniformToFill,
         alignment: BackgroundImageAlignment::Center,
-        cover_chrome: true,
         opacity: 0.38,
     };
     let anchor = Bounds::new(point(px(0.0), px(0.0)), size(px(600.0), px(600.0)));

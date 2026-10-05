@@ -89,6 +89,7 @@ mod tab_drag;
 mod tab_duplication;
 mod tab_menu;
 mod tab_presentation;
+mod tab_wallpaper;
 use tab_presentation::TabMeta;
 use tab_presentation::TabPresentation;
 mod tab_scroll;
@@ -2304,19 +2305,25 @@ impl NebulaWorkspace {
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(path))) = prompt.await else { return };
             let result = crate::session::save_to(&path, &export);
-            let _ = this.update_in(cx, |_, window, cx| match result {
-                Ok(()) => crate::gpui_shell::toast::toast(
-                    window,
-                    cx,
-                    crate::display::ToastKind::Success,
-                    format!("已导出到 {}", path.display()),
-                ),
-                Err(error) => crate::gpui_shell::toast::toast(
-                    window,
-                    cx,
-                    crate::display::ToastKind::Warning,
-                    format!("工作区导出失败：{error}"),
-                ),
+            let _ = this.update_in(cx, |_, window, cx| {
+                let language = crate::gpui_shell::config::ui_language(cx);
+                match result {
+                    Ok(()) => crate::gpui_shell::toast::toast(
+                        window,
+                        cx,
+                        crate::display::ToastKind::Success,
+                        format!("{} {}", language.pick("已导出到", "Exported to"), path.display()),
+                    ),
+                    Err(error) => crate::gpui_shell::toast::toast(
+                        window,
+                        cx,
+                        crate::display::ToastKind::Warning,
+                        format!(
+                            "{}: {error}",
+                            language.pick("工作区导出失败", "Workspace export failed")
+                        ),
+                    ),
+                }
             });
         })
         .detach();

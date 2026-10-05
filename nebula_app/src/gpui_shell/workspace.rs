@@ -88,6 +88,7 @@ mod tab_drag;
 mod tab_duplication;
 mod tab_menu;
 mod tab_presentation;
+mod tab_wallpaper;
 use tab_presentation::TabMeta;
 use tab_presentation::TabPresentation;
 mod tab_scroll;
@@ -3051,10 +3052,10 @@ impl Render for NebulaWorkspace {
                 this.open_quick_jump_palette(window, cx);
             }))
             .child(
-                // 用户显式配置的背景图画在 chrome 之下；系统 Mica/Aero/Acrylic
-                // 位于整个 GPUI 内容层下方，由 DWM 合成，不能在这里读取壁纸仿画。
-                // 拓展模式只在此绘图，壳/卡衬底在其上保留原有文字对比度。
-                crate::gpui_shell::wallpaper::window_layer(cx),
+                // 当前 tab 的壁纸（没有 tab 覆盖时用全局图）按共享选项画在
+                // chrome 之下；系统 Mica/Aero/Acrylic 由 DWM 合成，不能在这里
+                // 读取系统壁纸仿画。拓展模式只在此绘图，壳/卡衬底保留文字对比度。
+                self.window_wallpaper_layer(cx),
             )
             .child(
                 self.render_window_title_bar(
@@ -3129,7 +3130,7 @@ impl Render for NebulaWorkspace {
                                     // 壁纸层（卡底色之上、内容之下，覆盖整卡含
                                     // 内边距带）：卡模式按卡定位；拓展模式由
                                     // 窗口底层统一绘图，此处不覆盖原有衬底。
-                                    crate::gpui_shell::wallpaper::card_layer(cx),
+                                    self.tab_wallpaper_layer(cx),
                                 )
                                 .children(content),
                         )

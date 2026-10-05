@@ -9,10 +9,10 @@
 //!
 //! v2 additionally preserves each tab's custom name and optional color. v3
 //! persists the normal logical window size and maximized state. v4 records the
-//! full split tree of every tab (axis, ratio, per-pane cwd) plus the tab's
-//! launch identity (shell / profile / SSH destination), and the same schema
-//! doubles as the workspace-export file format: `session.json` is simply the
-//! automatic, unnamed workspace.
+//! full split tree of every tab (axis, ratio, per-pane cwd), its launch identity
+//! (shell / profile / SSH destination), and optional per-tab wallpaper paths.
+//! The same schema doubles as the workspace-export file format: `session.json`
+//! is simply the automatic, unnamed workspace.
 
 use std::path::{Path, PathBuf};
 
@@ -200,6 +200,10 @@ pub struct TabSession {
     /// User-selected tab light-strip color. `None` follows the current theme.
     #[serde(default)]
     pub color: Option<Rgb>,
+    /// User-selected background image override for this terminal tab.
+    /// The original path is stored; workspace exports do not copy image files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_image: Option<String>,
     /// v4: how the first pane starts. `None` (older file) means `Default`.
     #[serde(default)]
     pub launch: Option<LaunchSession>,
@@ -214,7 +218,15 @@ pub struct TabSession {
 impl TabSession {
     /// A v3-shaped tab: one pane at `cwd`, default shell.
     pub fn single(cwd: String, custom_name: Option<String>, color: Option<Rgb>) -> Self {
-        Self { cwd, custom_name, color, launch: None, layout: None, active_pane: 0 }
+        Self {
+            cwd,
+            custom_name,
+            color,
+            background_image: None,
+            launch: None,
+            layout: None,
+            active_pane: 0,
+        }
     }
 }
 
@@ -418,6 +430,7 @@ mod tests {
         assert_eq!(session.version, 1);
         assert_eq!(session.tabs[0].custom_name, None);
         assert_eq!(session.tabs[0].color, None);
+        assert_eq!(session.tabs[0].background_image, None);
         assert_eq!(session.tabs[0].layout, None);
         assert_eq!(session.tabs[0].launch, None);
     }
@@ -435,6 +448,19 @@ mod tests {
         let json = serde_json::to_string(&session).unwrap();
         let restored: Session = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, session);
+    }
+
+    #[test]
+    fn per_tab_background_image_is_saved_and_old_sessions_default_to_inherit() {
+        let mut tab = TabSession::single("D:/work".into(), None, None);
+        tab.background_image = Some("D:/wallpapers/work.png".into());
+        let session = Session::new(0, vec![tab]);
+        let json = serde_json::to_string(&session).unwrap();
+        let restored = parse(&json).expect("session with tab wallpaper must parse");
+        assert_eq!(restored.tabs[0].background_image.as_deref(), Some("D:/wallpapers/work.png"));
+
+        let older = r#"{"version":4,"boot_attempts":0,"active_tab":0,"tabs":[{"cwd":"D:/work"}]}"#;
+        assert_eq!(parse(older).unwrap().tabs[0].background_image, None);
     }
 
     #[test]

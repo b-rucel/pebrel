@@ -51,6 +51,7 @@ impl NebulaWorkspace {
         if let Some(target) = self.tab_meta.get_mut(self.active) {
             target.custom_name = meta.custom_name;
             target.color = meta.color;
+            target.background_image = meta.background_image;
         }
         cx.notify();
     }

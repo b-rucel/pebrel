@@ -1599,7 +1599,7 @@ mod tests {
     fn defaults_when_file_content_is_absent_or_junk() {
         let settings = RuntimeSettings::from_raw(&RawSettings::from_text("theme=NoSuchTheme\n"));
         // 出厂默认逐项对照旧壳 nebula_settings_load。
-        assert_eq!(settings.language, LanguagePref::System);
+        assert_eq!(settings.language, LanguagePref::EnUs);
         assert_eq!(settings.theme, ThemeName::Nord);
         assert_eq!(settings.font_family, None);
         assert_eq!(settings.font_family_cjk, None);

@@ -824,7 +824,7 @@ pub(super) struct NebulaRuntimeSettings {
 pub(super) fn nebula_settings_load(config: &UiConfig) -> NebulaRuntimeSettings {
     let path = nebula_settings::settings_path();
     let mut settings = NebulaRuntimeSettings {
-        language: LanguagePreference::System,
+        language: LanguagePreference::EnUs,
         ghost: true,
         accept: AcceptKey::Both,
         completion_style: CompletionStyle::Inline,

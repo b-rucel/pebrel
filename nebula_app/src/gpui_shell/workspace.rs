@@ -864,9 +864,16 @@ impl NebulaWorkspace {
                 }
             });
         let command_palette_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("搜索命令…"));
+            cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder(workspace_ui_language().pick("搜索命令…", "Search commands..."))
+            });
         let command_manager_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("搜索已保存命令…"));
+            cx.new(|cx| {
+                InputState::new(window, cx).placeholder(
+                    workspace_ui_language().pick("搜索已保存命令…", "Search saved commands..."),
+                )
+            });
         let file_tree_search_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder(
                 workspace_ui_language().pick("搜索文件和文件夹…", "Search files and folders..."),
@@ -2406,7 +2413,7 @@ impl NebulaWorkspace {
             return v_flex()
                 .size_full()
                 .children(header)
-                .child(div().flex_1().min_h_0().relative().children(probe).children(view))
+                .child(div().flex_1().min_h_0().relative().children(probe).children(view.map(|v| v.cached(gpui::StyleRefinement::default().size_full()))))
                 .into_any_element();
         }
         let mut path = Vec::new();
@@ -2497,7 +2504,7 @@ impl NebulaWorkspace {
                             .min_w_0()
                             .min_h_0()
                             .relative()
-                            .children(view)
+                            .children(view.map(|v| v.cached(gpui::StyleRefinement::default().size_full())))
                             // 与旧壳一致：不用焦点描边，仅给非活动 pane 覆 30%
                             // 黑色 veil。veil 只盖终端区——压暗标题条会把四个
                             // pane 的标题一起糊成灰。

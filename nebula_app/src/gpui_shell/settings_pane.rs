@@ -784,6 +784,9 @@ impl SettingsPane {
             "windowing_behavior" => pick!(windowing_behavior),
             "cell_width_mode" => pick!(cell_width_mode),
             "ligatures" => pick!(ligatures),
+            "font_weight" => {
+                Some((cur.font_weight != def.font_weight, def.font_weight.to_string()))
+            },
             "scrollback_lines" => Some((
                 cur.scrollback_lines != def.scrollback_lines,
                 def.scrollback_lines.to_string(),

@@ -18,6 +18,7 @@ const RESET_KEYS: &[&str] = &[
     "font_size",
     "ctrl_wheel_font_zoom",
     "ligatures",
+    "font_weight",
     "cursor_shape",
     "cursor_blink",
     "cursor_motion",

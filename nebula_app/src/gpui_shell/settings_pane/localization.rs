@@ -16,6 +16,25 @@ pub(super) fn localized_select_labels(
             })
             .collect();
     }
+    if key == "font_weight" {
+        return values
+            .iter()
+            .map(|value| {
+                let name = match *value {
+                    "100" => "Thin",
+                    "200" => "Extra Light",
+                    "300" => "Light",
+                    "400" => "Regular",
+                    "500" => "Medium",
+                    "600" => "Semi Bold",
+                    "700" => "Bold",
+                    "800" => "Extra Bold",
+                    _ => "Black",
+                };
+                format!("{value} · {name}").into()
+            })
+            .collect();
+    }
     let labels: Vec<&'static str> = match key {
         "language" => nebula_settings::LanguagePref::ALL
             .iter()

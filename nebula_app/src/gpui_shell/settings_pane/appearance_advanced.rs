@@ -137,6 +137,15 @@ impl SettingsPane {
                 cx,
             ))
             .child(self.select_row(
+                "font_weight",
+                language.pick("字体粗细", "Font weight"),
+                language.pick(
+                    "终端文字的常规字重；粗体会自动比它更重。需要字体本身提供对应字重。",
+                    "Regular terminal text weight; bold is derived and always heavier. The font itself must provide the weight.",
+                ),
+                cx,
+            ))
+            .child(self.select_row(
                 "cell_width_mode",
                 language.pick("字体间距", "Character spacing"),
                 help("cell_width_mode", language),

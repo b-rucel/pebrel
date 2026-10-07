@@ -33,6 +33,8 @@ pub use custom_theme::{
     ThemeLayout, ThemeTypography, ThemeUiColors, ThemeValidationError, foreground_recommendations,
     meets_wcag_aa, wcag_contrast_ratio,
 };
+mod font_weight;
+pub use font_weight::{DEFAULT_FONT_WEIGHT, FONT_WEIGHT_VALUES, bold_font_weight};
 mod language;
 mod ligatures;
 pub use ligatures::Ligatures;
@@ -1002,6 +1004,8 @@ pub struct RuntimeSettings {
     pub ctrl_wheel_font_zoom: bool,
     /// Enabled by default; explicit theme mode follows the selected theme.
     pub ligatures: Ligatures,
+    /// Regular terminal font weight (100–900); bold derives from it.
+    pub font_weight: u16,
     pub cursor_shape: Option<CursorShapeName>,
     pub cursor_blink: Option<bool>,
     pub cursor_motion: CursorMotion,
@@ -1194,6 +1198,7 @@ impl RuntimeSettings {
                 .value("ligatures")
                 .and_then(Ligatures::from_settings)
                 .unwrap_or_default(),
+            font_weight: font_weight::font_weight(raw),
             cursor_shape: raw.value("cursor_shape").and_then(CursorShapeName::from_settings),
             cursor_blink: raw.bool_on("cursor_blink"),
             cursor_motion: raw

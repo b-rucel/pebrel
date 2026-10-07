@@ -51,6 +51,8 @@ pub struct Settings {
     /// GPUI 逻辑像素（配置里是 pt，1pt = 4/3 px @96dpi）。
     pub font_size_px: f32,
     pub ligatures: bool,
+    /// Regular terminal font weight (100–900); bold is derived from it.
+    pub font_weight: u16,
     /// 配置文件的基准字号，不含设置页/Ctrl+滚轮持久化的终端缩放。
     /// 启动窗口按它定形，和旧壳的 `window_size` 契约一致。
     pub base_font_size_px: f32,
@@ -273,6 +275,7 @@ impl Settings {
             ligatures: runtime
                 .ligatures
                 .enabled(resolved_theme.typography().map(|typography| typography.ligatures)),
+            font_weight: runtime.font_weight,
             base_font_size_px,
             ctrl_wheel_font_zoom: runtime.ctrl_wheel_font_zoom,
             ui_font_size_px: runtime.ui_font_size_px.unwrap_or(base_font_size_px),
@@ -316,11 +319,13 @@ impl Settings {
                     .as_deref()
                     .unwrap_or(crate::font_install::REQUIRED_FONT_FAMILY);
                 use gpui::{FontStyle, FontWeight};
+                let regular = FontWeight(f32::from(runtime.font_weight));
+                let bold = FontWeight(f32::from(nebula_settings::bold_font_weight(runtime.font_weight)));
                 [
-                    (FontWeight::NORMAL, FontStyle::Normal),
-                    (FontWeight::BOLD, FontStyle::Normal),
-                    (FontWeight::NORMAL, FontStyle::Italic),
-                    (FontWeight::BOLD, FontStyle::Italic),
+                    (regular, FontStyle::Normal),
+                    (bold, FontStyle::Normal),
+                    (regular, FontStyle::Italic),
+                    (bold, FontStyle::Italic),
                 ]
                 .map(|(weight, style)| gpui::Font {
                     weight,

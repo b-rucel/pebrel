@@ -162,6 +162,13 @@ impl SettingsPane {
             cx,
         );
         add_select(
+            "font_weight",
+            nebula_settings::FONT_WEIGHT_VALUES,
+            &runtime.font_weight.to_string(),
+            window,
+            cx,
+        );
+        add_select(
             "cell_width_mode",
             &["compact", "relaxed"],
             runtime.cell_width_mode.settings_value(),

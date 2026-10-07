@@ -943,14 +943,12 @@ impl TerminalView {
         self.completion_editor.invalidate();
         self.editor_query_task = None;
 
-        self.font =
-            mono_font(&families[0], FontWeight::NORMAL, FontStyle::Normal, settings.ligatures);
-        self.font_bold =
-            mono_font(&families[1], FontWeight::BOLD, FontStyle::Normal, settings.ligatures);
-        self.font_italic =
-            mono_font(&families[2], FontWeight::NORMAL, FontStyle::Italic, settings.ligatures);
-        self.font_bold_italic =
-            mono_font(&families[3], FontWeight::BOLD, FontStyle::Italic, settings.ligatures);
+        let regular = FontWeight(f32::from(settings.font_weight));
+        let bold = FontWeight(f32::from(nebula_settings::bold_font_weight(settings.font_weight)));
+        self.font = mono_font(&families[0], regular, FontStyle::Normal, settings.ligatures);
+        self.font_bold = mono_font(&families[1], bold, FontStyle::Normal, settings.ligatures);
+        self.font_italic = mono_font(&families[2], regular, FontStyle::Italic, settings.ligatures);
+        self.font_bold_italic = mono_font(&families[3], bold, FontStyle::Italic, settings.ligatures);
         self.font_size = font_size;
         self.ligatures = settings.ligatures;
         self.cell_width_mode = settings.cell_width_mode;

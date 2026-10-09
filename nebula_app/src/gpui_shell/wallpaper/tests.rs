@@ -150,6 +150,7 @@ fn card_and_chrome_share_the_window_anchor_and_preserve_native_physical_size() {
     let mut layout = WallpaperLayout {
         fit: BackgroundImageFit::UniformToFill,
         alignment: BackgroundImageAlignment::Center,
+        cover_chrome: true,
         opacity: 0.38,
     };
     let anchor = Bounds::new(point(px(0.0), px(0.0)), size(px(600.0), px(600.0)));

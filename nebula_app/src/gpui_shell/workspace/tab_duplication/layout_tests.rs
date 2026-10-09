@@ -104,6 +104,7 @@ fn duplicate_rebuilds_nested_mixed_layout_with_fresh_sessions(cx: &mut TestAppCo
         cwd: cwd.clone(),
         custom_name: Some("Mixed workspace".into()),
         color: Some(crate::display::color::Rgb::new(12, 34, 56)),
+        background_image: None,
         launch: Some(launches[0].clone()),
         layout: Some(LayoutSession::Split {
             axis: SplitAxis::LeftRight,

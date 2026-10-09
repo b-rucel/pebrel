@@ -97,7 +97,7 @@ fn scrolling_controls_persist_dropdown_and_slider_without_changing_existing_hist
         pane.active_section = 1;
         cx.notify();
     });
-    window.simulate_resize(size(px(1280.0), px(1800.0)));
+    window.simulate_resize(size(px(1280.0), px(2000.0)));
     draw(&mut window);
     let old_config = window.read(|cx| cx.global::<Settings>().term_config());
     let mut existing = Term::new(old_config, &TermSize::new(80, 24), VoidListener);

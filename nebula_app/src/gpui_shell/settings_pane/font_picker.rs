@@ -819,7 +819,24 @@ mod interaction_tests {
         // the font field used to hide every available family under its header.
         cx.simulate_resize(gpui::size(px(1280.0), px(735.0)));
         cx.run_until_parked();
+        // Sections above the font fields can push them below this short window;
+        // scroll the settings page so the field is reachable before opening it.
         let bounds = cx.debug_bounds("font-picker-chevron").unwrap();
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: point(px(640.0), px(367.5)),
+            delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(367.5) - bounds.center().y)),
+            touch_phase: gpui::TouchPhase::Moved,
+            modifiers: gpui::Modifiers::default(),
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+        let bounds = cx.debug_bounds("font-picker-chevron").unwrap();
+        assert!(
+            bounds.top() >= px(0.0) && bounds.bottom() <= px(735.0),
+            "font field must be visible before opening its menu: {bounds:?}"
+        );
         cx.simulate_click(bounds.center(), gpui::Modifiers::default());
         cx.run_until_parked();
         cx.update(|window, cx| {
